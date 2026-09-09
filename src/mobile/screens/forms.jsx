@@ -3,7 +3,7 @@ import { Video, MapPin, RefreshCw } from 'lucide-react';
 import { useUI, fmtKES, StkIcon } from './kit';
 import { requestPayment } from '../../lib/mpesa';
 import { scheduleAt } from '../../lib/notifications';
-import { changePassword } from '../../lib/auth';
+import { changePassword } from '../../lib/account';
 
 /* ---- open helpers (call from any screen with the UI ctx) ---- */
 export const openCollect = (ui, store, memberId) =>

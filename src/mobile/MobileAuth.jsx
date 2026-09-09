@@ -1,37 +1,48 @@
 import { useState } from 'react';
-import { User, Lock, Eye, EyeOff, ArrowRight, ShieldAlert } from 'lucide-react';
+import { User, Lock, Mail, Eye, EyeOff, ArrowRight, ShieldAlert, MailCheck } from 'lucide-react';
 import { Logo } from '../App';
-import { hasAccount, accountUsername, createAccount, login } from '../lib/auth';
+import { signUp, signIn, authMode } from '../lib/account';
 import './mobile.css';
 
-// The account gate. Sign up on first run (no account yet), otherwise log in.
+// The account gate. Email + password via Supabase Auth (or the device-local
+// gate when no backend is configured).
 export default function MobileAuth({ onAuthed }) {
-  const existing = hasAccount();
-  const [mode, setMode] = useState(existing ? 'login' : 'signup');
-  const [username, setUsername] = useState(existing ? accountUsername() : '');
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const local = authMode === 'local';
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError(''); setNotice('');
+    if (!email.trim() || !password) { setError('Enter your email and password.'); return; }
+
     if (mode === 'signup') {
+      if (!local && !name.trim()) { setError('Enter your name.'); return; }
       if (password !== confirm) { setError('Passwords do not match.'); return; }
       setBusy(true);
-      const r = await createAccount(username, password);
+      const r = await signUp({ name, email, password });
       setBusy(false);
       if (!r.ok) { setError(r.error); return; }
-      onAuthed(r.username);
+      if (r.needsConfirmation) {
+        setNotice('Check your email to confirm your account, then sign in.');
+        setMode('login'); setPassword(''); setConfirm('');
+        return;
+      }
+      onAuthed(r.user);
     } else {
-      if (!username.trim() || !password) { setError('Enter your username and password.'); return; }
       setBusy(true);
-      const r = await login(username, password);
+      const r = await signIn({ email, password });
       setBusy(false);
       if (!r.ok) { setError(r.error); return; }
-      onAuthed(r.username);
+      onAuthed(r.user);
     }
   };
 
@@ -51,16 +62,26 @@ export default function MobileAuth({ onAuthed }) {
         <form className="cha-auth-sheet" onSubmit={submit}>
           <div className="cha-auth-head">
             <h3>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h3>
-            <p>{mode === 'signup' ? 'Set a username and password to secure this device.' : 'Sign in to continue.'}</p>
+            <p>{mode === 'signup' ? 'Sign up to run your Chama and sync with members.' : 'Sign in to continue.'}</p>
           </div>
 
           {error && <div className="cha-auth-err"><ShieldAlert size={18} /> {error}</div>}
+          {notice && <div className="cha-auth-err" style={{ background: 'rgba(34,197,94,.12)', color: '#166534' }}><MailCheck size={18} /> {notice}</div>}
 
-          <label className="cha-field"><span>Username</span>
+          {mode === 'signup' && !local && (
+            <label className="cha-field"><span>Full name</span>
+              <div className="cha-authin">
+                <User size={18} />
+                <input placeholder="e.g. Grace Wanjiru" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+            </label>
+          )}
+
+          <label className="cha-field"><span>Email</span>
             <div className="cha-authin">
-              <User size={18} />
-              <input autoCapitalize="none" autoCorrect="off" placeholder="e.g. grace_w"
-                value={username} onChange={(e) => setUsername(e.target.value)} disabled={mode === 'login' && !!accountUsername() && false} />
+              <Mail size={18} />
+              <input type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" placeholder="you@example.com"
+                value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
           </label>
 
@@ -91,11 +112,11 @@ export default function MobileAuth({ onAuthed }) {
 
           <div className="cha-auth-foot">
             {mode === 'signup'
-              ? (hasAccount() ? <>Already set up? <button type="button" className="cha-link" onClick={() => { setMode('login'); setError(''); }}>Sign in</button></> : null)
-              : <>New here? <button type="button" className="cha-link" onClick={() => { setMode('signup'); setError(''); setUsername(''); }}>Create an account</button></>}
+              ? <>Already have an account? <button type="button" className="cha-link" onClick={() => { setMode('login'); setError(''); setNotice(''); }}>Sign in</button></>
+              : <>New here? <button type="button" className="cha-link" onClick={() => { setMode('signup'); setError(''); setNotice(''); }}>Create an account</button></>}
           </div>
           <p className="cha-muted cha-small" style={{ textAlign: 'center', marginTop: 4 }}>
-            Your account is stored only on this device.
+            {local ? 'Your account is stored only on this device.' : 'Secured by ChamaOne. Your data syncs across your devices.'}
           </p>
         </form>
       </div>

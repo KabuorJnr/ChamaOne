@@ -3,7 +3,7 @@ import MobileShell from './mobile/MobileShell';
 import MobileAuth from './mobile/MobileAuth';
 import { useChama, setNotifSink, getState } from './store/chama';
 import { notify as deviceNotify } from './lib/notifications';
-import { getSession, logout as authLogout } from './lib/auth';
+import { currentUser, onAuthChange, signOut } from './lib/account';
 import './mobile/mobile.css';
 
 // Mirror important in-app notifications to the phone's notification tray —
@@ -24,18 +24,30 @@ setNotifSink(({ type, text }) => {
 export default function App() {
   const store = useChama();
   const [splash, setSplash] = useState(true);
-  // Auth session — who is signed in on this device (null = show the login gate).
-  const [account, setAccount] = useState(() => getSession()?.username || null);
+  // Auth session — the signed-in user object (null = show the login gate).
+  const [account, setAccount] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  // Resolve the current session on cold start, then keep it in sync with
+  // Supabase auth changes (sign-in/out/token refresh across devices).
+  useEffect(() => {
+    let alive = true;
+    currentUser().then((u) => { if (alive) { setAccount(u); setAuthReady(true); } });
+    const unsub = onAuthChange((u) => { if (alive) setAccount(u); });
+    return () => { alive = false; unsub(); };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setSplash(false), 1400);
     return () => clearTimeout(t);
   }, []);
 
-  const onLogout = () => { authLogout(); setAccount(null); };
-  const user = { name: account || 'Member', role: 'chairperson', onLogout };
+  const onLogout = () => { signOut(); setAccount(null); };
+  const user = { name: account?.name || 'Member', role: 'chairperson', onLogout };
 
-  if (splash) {
+  // Hold the splash until the branded delay AND the session check are both done,
+  // so a signed-in user never flashes the login screen.
+  if (splash || !authReady) {
     return (
       <div className="cha-m">
         <div className="cha-splash">
