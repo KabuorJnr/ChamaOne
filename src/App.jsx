@@ -89,20 +89,41 @@ function Splash() {
   );
 }
 
-export function Logo({ className }) {
-  // Simple inline mark: three linked members (unity) around a coin. Monochrome
-  // blue on the dark ground — matches the standard palette.
-  const dot = '#60A5FA';
+// A single member glyph: head + rounded shoulders.
+function Person({ cx, cy, r, sr, fill }) {
   return (
-    <svg className={className} viewBox="0 0 512 512" width="120" height="120" aria-label="ChamaOne">
-      <g fill="none" strokeLinecap="round">
-        <circle cx="256" cy="140" r="44" fill={dot} />
-        <circle cx="150" cy="330" r="44" fill={dot} />
-        <circle cx="362" cy="330" r="44" fill={dot} />
-        <path d="M256 140 L150 330 L362 330 Z" stroke="#ffffff" strokeOpacity="0.9" strokeWidth="22" />
-      </g>
-      <circle cx="256" cy="278" r="40" fill="#ffffff" />
-      <text x="256" y="294" fontFamily="Sora, sans-serif" fontSize="42" fontWeight="800" textAnchor="middle" fill="#1E3A8A">₭</text>
+    <g fill={fill}>
+      <circle cx={cx} cy={cy} r={r} />
+      <rect x={cx - sr} y={cy + r * 0.35} width={sr * 2} height={sr * 1.15} rx={sr * 0.62} />
+    </g>
+  );
+}
+
+// ChamaOne mark: three members united around a gold coin (the group pool),
+// on a deep-navy squircle. Scales crisply at every size.
+export function Logo({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 512 512" width="112" height="112" aria-label="ChamaOne">
+      <defs>
+        <linearGradient id="chaBg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#18294A" />
+          <stop offset="1" stopColor="#0B1120" />
+        </linearGradient>
+        <radialGradient id="chaCoin" cx="0.5" cy="0.38" r="0.75">
+          <stop offset="0" stopColor="#FCD34D" />
+          <stop offset="0.55" stopColor="#F59E0B" />
+          <stop offset="1" stopColor="#C2740A" />
+        </radialGradient>
+      </defs>
+      <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#chaBg)" />
+      <path d="M256 120 L138 322 L374 322 Z" fill="none" stroke="#2563EB" strokeOpacity="0.45" strokeWidth="14" strokeLinejoin="round" />
+      <Person cx={256} cy={118} r={34} sr={40} fill="#60A5FA" />
+      <Person cx={138} cy={322} r={30} sr={36} fill="#3B82F6" />
+      <Person cx={374} cy={322} r={30} sr={36} fill="#2563EB" />
+      <circle cx="256" cy="300" r="74" fill="#0B1120" />
+      <circle cx="256" cy="300" r="60" fill="url(#chaCoin)" />
+      <circle cx="256" cy="300" r="60" fill="none" stroke="#FDE68A" strokeOpacity="0.55" strokeWidth="3" />
+      <circle cx="256" cy="300" r="38" fill="none" stroke="#9A5B08" strokeOpacity="0.5" strokeWidth="6" />
     </svg>
   );
 }
