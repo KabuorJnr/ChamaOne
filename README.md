@@ -54,28 +54,45 @@ new group** starts your own, **More → Settings → Reset** clears it.
 
 ## Build the Android APK
 
-Uses the **same toolchain as EduOne** (this machine's proven setup).
+The web app (PWA) is the always-current build and updates itself. Build an APK
+only when you want a native install — it is a snapshot, so rebuild it whenever
+you want testers on the latest code.
 
-1. Build the web bundle and add the Android platform (first time only):
-   ```bash
-   npm run build
-   npx cap add android
-   ```
-2. Create `android/local.properties` with **forward slashes** (git-ignored, machine-specific):
-   ```
-   sdk.dir=C:/Users/USER/AppData/Local/Android/Sdk
-   ```
-3. Assemble the debug APK using the **Android Studio JBR (JDK 21)** — system Java (25) is too new for the Gradle wrapper:
-   ```bash
-   npm run android:sync
-   cd android
-   JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew :app:assembleDebug --no-daemon
-   ```
-   Output: `android/app/build/outputs/apk/debug/app-debug.apk` (appId `com.chamaone.app`).
+```bash
+npm install
+npm run build
+npx cap add android        # first time only
+npm run assets             # launcher icon + splash from assets/icon.png
+npm run android:sync
+```
 
-Or open it in Android Studio: `npm run android:open`. iOS needs a Mac (`npx cap add ios`).
+Then assemble with the **Android Studio JBR (JDK 21)** — system Java may be too
+new for the Gradle wrapper. Create `android/local.properties` first (git-ignored):
 
----
+```
+sdk.dir=C:/Users/USER/AppData/Local/Android/Sdk
+```
+
+```bash
+cd android
+JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew :app:assembleDebug --no-daemon
+```
+
+Output: `android/app/build/outputs/apk/debug/app-debug.apk` (appId `com.chamaone.app`).
+Or open it in Android Studio with `npm run android:open`. iOS needs a Mac (`npx cap add ios`).
+
+### App icon (the launcher tile)
+
+The tile is generated from `assets/` by `npm run assets`:
+
+| File | Purpose |
+|---|---|
+| `assets/icon.png` | 1024×1024 app icon (legacy launcher tile) |
+| `assets/icon-foreground.png` | adaptive-icon foreground (logo, transparent, in the safe zone) |
+| `assets/icon-background.png` | adaptive-icon background (brand navy) |
+| `assets/splash.png` / `splash-dark.png` | 2732×2732 splash |
+
+Re-run `npm run assets` after changing any of them, then rebuild.
 
 ## Architecture
 

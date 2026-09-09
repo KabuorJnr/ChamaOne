@@ -12,7 +12,9 @@
     "android:add": "cap add android",
     "android:sync": "vite build && cap sync android",
     "android:open": "cap open android",
-    "android:run": "vite build && cap sync android && cap run android"
+    "android:run": "vite build && cap sync android && cap run android",
+    "assets": "capacitor-assets generate --android",
+    "android:apk": "npm run build && npx cap sync android && capacitor-assets generate --android"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
@@ -28,6 +30,7 @@
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.0",
     "@vitejs/plugin-react": "^6.0.1",
     "vite": "^8.0.12",

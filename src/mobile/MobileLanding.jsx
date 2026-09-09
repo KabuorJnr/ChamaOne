@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Coins, CreditCard, Vote, ShieldCheck, Download, ArrowRight, Smartphone } from 'lucide-react';
+import { Coins, CreditCard, Vote, ShieldCheck, Download, ArrowRight } from 'lucide-react';
 import { Logo } from '../App';
 import './mobile.css';
 
@@ -44,9 +44,6 @@ export default function MobileLanding({ onEnter }) {
 
         <div className="cha-auth-sheet" style={{ marginTop: -28 }}>
           <button className="cha-btn" onClick={install}><Download size={18} /> Install the app</button>
-          <a className="cha-btn cha-btn-ghost" href="/ChamaOne.apk" download style={{ textDecoration: 'none' }}>
-            <Smartphone size={17} /> Download for Android (APK)
-          </a>
           <button className="cha-btn cha-btn-ghost" onClick={onEnter}>Open in browser <ArrowRight size={17} /></button>
 
           <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
