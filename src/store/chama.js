@@ -93,16 +93,16 @@ function ensure() {
       if (old) { const g = JSON.parse(old); if (g && g.group) root = rootFromGroup(g); }
     } catch { /* ignore */ }
   }
-  // First run — seed a demo group.
-  if (!root || !root.groups || !Object.keys(root.groups).length) root = rootFromGroup(seedGroup());
-  if (!root.groups[root.activeGroupId]) root.activeGroupId = Object.keys(root.groups)[0];
-  state = root.groups[root.activeGroupId];
+  // First run — start empty; the chairperson creates their real Chama.
+  if (!root || !root.groups) root = { activeGroupId: null, groups: {} };
+  if (!root.groups[root.activeGroupId]) root.activeGroupId = Object.keys(root.groups)[0] || null;
+  state = root.groups[root.activeGroupId] || blankGroup();
   return state;
 }
 
 /* ---------- remote hydration ---------- */
 // Load the signed-in user's groups from Supabase into the in-memory snapshot.
-// Returns the number of groups. In local mode it just ensures the seed.
+// Returns the number of groups. In local mode it just ensures local state.
 export async function hydrate(user) {
   if (user) currentUser = user;
   if (!REMOTE) { ensure(); return groupCount(); }
@@ -208,8 +208,7 @@ export function deleteGroup(id) {
   if (REMOTE) mirror(db.deleteGroup(id));
   delete root.groups[id];
   if (!Object.keys(root.groups).length) {
-    if (REMOTE) { root.activeGroupId = null; state = blankGroup(); }
-    else { const g = seedGroup(); root.groups[g.group.id] = g; root.activeGroupId = g.group.id; state = g; }
+    root.activeGroupId = null; state = blankGroup();
   } else {
     if (root.activeGroupId === id) root.activeGroupId = Object.keys(root.groups)[0];
     state = root.groups[root.activeGroupId];
@@ -286,6 +285,7 @@ function buildGroup({ name, type, amount, frequency, members: mem }) {
     members: (mem || []).map((m, i) => ({
       id: uid('mb'), name: m.name, phone: normalizePhone(m.phone),
       role: i === 0 ? 'Chairperson' : m.role || 'Member', joinedAt: now(), status: 'active',
+      inviteCode: genCode(),
     })),
     cycles: [makeCycle(cycleId, frequency)],
     contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
@@ -338,7 +338,7 @@ export function updateSettings(patch) { Object.assign(ensure().settings, patch);
 
 /* ---------- members ---------- */
 export function addMember({ name, phone, role }) {
-  const m = { id: uid('mb'), name: name.trim(), phone: normalizePhone(phone), role: role || 'Member', joinedAt: now(), status: 'active' };
+  const m = { id: uid('mb'), name: name.trim(), phone: normalizePhone(phone), role: role || 'Member', joinedAt: now(), status: 'active', inviteCode: genCode() };
   ensure().members.push(m);
   notify('member', `${m.name} joined the group.`);
   emit();
@@ -597,9 +597,9 @@ export function toCSV() {
 export function getState() { return state; } // raw current state (may be null pre-init)
 // reset/wipe rebuild the whole container as a single fresh demo group.
 export function reset() {
-  // Remote mode has no demo data to reload — re-pull the real state instead.
+  // Remote: re-pull the real state. Local: clear back to empty.
   if (REMOTE) { hydrate(currentUser); return; }
-  const g = seedGroup(); root = rootFromGroup(g); state = g; emit();
+  root = { activeGroupId: null, groups: {} }; state = blankGroup(); emit();
 }
 export function wipe() {
   if (REMOTE) { hydrate(currentUser); return; }
@@ -638,74 +638,3 @@ export function useChama() {
   // Merge live state with actions so screens use `store.members`, `store.recordContribution(...)`, etc.
   return { ...snap, ...actions };
 }
-
-/* =====================================================================
- * Seed / demo data — a realistic Chama so the app is explorable at once.
- * Returns ONE group state object (added into the multi-group container).
- * ===================================================================== */
-function seedGroup() {
-  const s = {
-    group: { id: uid('grp'), name: 'Umoja Investment Chama', type: 'Investment Club', contributionAmount: 2000, frequency: 'monthly', currency: CURRENCY, createdAt: monthsAgo(4), activeCycleId: null, loanInterest: 10, joinCode: genCode() },
-    members: [
-      mk('Grace Wanjiru', '0722100200', 'Chairperson', 4),
-      mk('James Otieno', '0733200300', 'Treasurer', 4),
-      mk('Fatuma Ali', '0711300400', 'Secretary', 4),
-      mk('Peter Kamau', '0700400500', 'Member', 3),
-      mk('Mercy Chebet', '0745500600', 'Member', 3),
-      mk('David Mwangi', '0790600700', 'Member', 2),
-      mk('Aisha Hassan', '0712700800', 'Member', 1),
-    ],
-    cycles: [], contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
-    settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false }, onboarded: true,
-  };
-  const cids = [];
-  for (let i = 3; i >= 0; i--) {
-    const id = uid('cy'); cids.push(id);
-    const start = new Date(); start.setMonth(start.getMonth() - i); start.setDate(1);
-    const end = new Date(start); end.setMonth(end.getMonth() + 1);
-    s.cycles.push({ id, label: start.toLocaleDateString('en-KE', { month: 'long', year: 'numeric' }), startDate: start.toISOString(), endDate: end.toISOString() });
-  }
-  s.group.activeCycleId = cids[cids.length - 1];
-
-  const prev = state; state = s;
-  s.cycles.forEach((c, ci) => {
-    s.members.forEach((m, mi) => {
-      const isCurrent = ci === s.cycles.length - 1;
-      if (isCurrent && mi >= 4) return;
-      const partial = isCurrent && mi === 3;
-      recordSilently(m.id, partial ? 1000 : 2000, c.id, 'mpesa', 'RGH' + Math.random().toString(36).slice(2, 8).toUpperCase());
-    });
-  });
-
-  const loan = { id: uid('ln'), memberId: s.members[3].id, principal: 15000, interestRate: 10, termMonths: 3, purpose: 'School fees', status: 'active', appliedAt: monthsAgo(2), votes: voteAll(s.members, 'yes'), disbursedAt: monthsAgo(2), repayments: [{ id: uid('rp'), amount: 6000, date: monthsAgo(1) }] };
-  s.loans.push(loan);
-  addLedgerEntry({ type: 'Loan disbursement', amount: 15000, direction: 'out', memberId: loan.memberId, note: 'Loan to Peter Kamau @ 10%' });
-  addLedgerEntry({ type: 'Loan repayment', amount: 6000, direction: 'in', memberId: loan.memberId, note: 'Repayment from Peter Kamau' });
-
-  s.loans.unshift({ id: uid('ln'), memberId: s.members[4].id, principal: 8000, interestRate: 10, termMonths: 2, purpose: 'Boda boda repair', status: 'pending', appliedAt: daysAgoIso(2), votes: { [s.members[0].id]: 'yes', [s.members[1].id]: 'yes' }, disbursedAt: null, repayments: [] });
-
-  s.meetings.push({ id: uid('mt'), title: 'Monthly Review Meeting', date: daysFromNowIso(6), online: true, link: 'https://meet.jit.si/ChamaOne-monthly-review-x7k2p', location: '', agenda: ['Review contributions', 'Vote on Mercy’s loan', 'Plan Q4 investment'], minutes: '', motions: [{ id: uid('mo'), text: 'Increase monthly contribution to KES 2,500 from next cycle', votes: voteMix(s.members), status: 'open' }], status: 'scheduled' });
-  s.meetings.push({ id: uid('mt'), title: 'AGM 2026 Planning', date: monthsAgo(1), location: 'Zoom', agenda: ['Elect officials', 'Approve accounts'], minutes: 'Officials retained unanimously. Accounts approved. Next: diversify into a money-market fund.', motions: [{ id: uid('mo'), text: 'Approve 2025 financial statements', votes: voteAll(s.members, 'yes'), status: 'passed' }], status: 'completed' });
-
-  s.notifications.unshift(
-    { id: uid('nt'), type: 'loan', text: 'Mercy Chebet applied for a KES 8,000 loan — vote needed.', date: daysAgoIso(2), read: false },
-    { id: uid('nt'), type: 'meeting', text: 'Monthly Review Meeting in 6 days.', date: daysAgoIso(1), read: false },
-    { id: uid('nt'), type: 'money', text: '3 members are yet to contribute this cycle.', date: now(), read: false },
-  );
-
-  state = prev;
-  return s;
-
-  function recordSilently(memberId, amount, cycleId, method, ref) {
-    const c = { id: uid('cn'), memberId, cycleId, amount, method, ref, status: 'confirmed', date: (s.cycles.find((x) => x.id === cycleId) || {}).startDate || now() };
-    s.contributions.push(c);
-    const m = s.members.find((x) => x.id === memberId);
-    addLedgerEntry({ type: 'Contribution', amount, direction: 'in', memberId, note: `${m.name} — ${s.cycles.find((x) => x.id === cycleId).label}`, ref });
-  }
-}
-function mk(name, phone, role, monthsBack) { return { id: uid('mb'), name, phone: normalizePhone(phone), role, joinedAt: monthsAgo(monthsBack), status: 'active' }; }
-function voteAll(mem, v) { const o = {}; mem.forEach((m) => (o[m.id] = v)); return o; }
-function voteMix(mem) { const o = {}; mem.forEach((m, i) => (o[m.id] = i % 3 === 0 ? 'no' : i % 4 === 0 ? 'abstain' : 'yes')); return o; }
-function monthsAgo(n) { const d = new Date(); d.setMonth(d.getMonth() - n); return d.toISOString(); }
-function daysAgoIso(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); }
-function daysFromNowIso(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString(); }

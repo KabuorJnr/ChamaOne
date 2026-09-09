@@ -17,37 +17,50 @@ export function MoreScreen({ store, open, user, onLogout }) {
   const fin = store.financialSummary();
   return (
     <>
-      <div className="cha-hero-card">
-        <span className="cha-pill">POOL BALANCE</span>
-        <div className="cha-hero-amt cha-num" style={{ marginTop: 14 }}>{fmtKES(fin.balance)}</div>
-        <div className="cha-hero-meta"><span className="up"><ArrowUpRight size={13} /> {fmtKES(fin.inflow)} in</span><span className="down"><ArrowDownLeft size={13} /> {fmtKES(fin.outflow)} out</span></div>
+      {/* Slim balance strip — the full hero already lives on Home. */}
+      <div className="cha-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', color: 'var(--muted)' }}>POOL BALANCE</div>
+          <div className="cha-num" style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.02em', marginTop: 2 }}>{fmtKES(fin.balance)}</div>
+        </div>
+        <div style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.7, flex: '0 0 auto' }}>
+          <div style={{ color: 'var(--good)', fontWeight: 700 }}><ArrowUpRight size={12} style={{ verticalAlign: '-1px' }} /> {fmtKES(fin.inflow)}</div>
+          <div style={{ color: 'var(--bad)', fontWeight: 700 }}><ArrowDownLeft size={12} style={{ verticalAlign: '-1px' }} /> {fmtKES(fin.outflow)}</div>
+        </div>
       </div>
 
+      <SecHead title="Your account" />
       <div className="cha-list-card">
         <div className="cha-li" style={{ cursor: 'default' }}>
           <span className="cha-lic" style={{ background: 'var(--blue)', color: '#fff' }}>{(user?.name || 'M')[0].toUpperCase()}</span>
-          <div className="cha-lt"><b>{user?.name || 'Member'}</b><span>Signed in on this device</span></div>
+          <div className="cha-lt"><b>{user?.name || 'Member'}</b><span>{user?.role || 'Member'}</span></div>
         </div>
         <button className="cha-li" onClick={() => openChangePassword(ui)}>
           <span className="cha-lic" style={{ background: 'var(--blue-50)', color: 'var(--blue)' }}><KeyRound /></span>
-          <div className="cha-lt"><b>Change password</b><span>Update your login</span></div>
+          <div className="cha-lt"><b>Change password</b></div>
           <ChevronRight className="cha-chev" size={18} />
         </button>
-        <button className="cha-li" onClick={() => confirm('Sign out?', 'You’ll need your username and password to sign back in.', () => onLogout && onLogout())}>
+        <button className="cha-li" onClick={() => confirm('Sign out?', 'You’ll need your email and password to sign back in.', () => onLogout && onLogout())}>
           <span className="cha-lic" style={{ background: 'var(--bad-100)', color: 'var(--bad)' }}><LogOut /></span>
-          <div className="cha-lt"><b>Sign out</b><span>Lock the app</span></div>
+          <div className="cha-lt"><b>Sign out</b></div>
           <ChevronRight className="cha-chev" size={18} />
         </button>
       </div>
 
+      <SecHead title="Money" />
       <div className="cha-list-card">
         <Item icon={Coins} color="var(--good)" bg="var(--good-100)" title="Collections" sub="Every contribution collected" onClick={() => open('collections')} />
-        <Item icon={BarChart3} color="var(--blue)" bg="var(--blue-50)" title="Reports" sub="Statement, trends, exports" onClick={() => open('reports')} />
-        <Item icon={BookOpen} color="#7C3AED" bg="#EDE9FE" title="Ledger" sub="Full tamper-evident audit trail" onClick={() => open('ledger')} />
-        <Item icon={Settings} color="var(--muted)" bg="var(--line)" title="Settings" sub="Group, M-Pesa, cycle" onClick={() => open('settings')} />
-        <Item icon={ArrowLeftRight} color="var(--info)" bg="var(--info-100)" title="Switch Chama" sub={`${store.groupCount()} ${store.groupCount() === 1 ? 'Chama' : 'Chamas'} on this device`} onClick={() => openGroupSwitcher(ui, store, open)} />
-        <Item icon={FilePlus2} color="var(--warn)" bg="var(--warn-100)" title="Create a new Chama" sub="Add another group" onClick={() => openCreateGroup(ui, store, open)} />
+        <Item icon={BarChart3} color="var(--blue)" bg="var(--blue-50)" title="Reports" sub="Statements, trends, exports" onClick={() => open('reports')} />
+        <Item icon={BookOpen} color="#7C3AED" bg="#EDE9FE" title="Ledger" sub="Full audit trail" onClick={() => open('ledger')} />
       </div>
+
+      <SecHead title="Group" />
+      <div className="cha-list-card">
+        <Item icon={Settings} color="var(--muted)" bg="var(--line)" title="Settings" sub="Group, M-Pesa, cycle" onClick={() => open('settings')} />
+        <Item icon={ArrowLeftRight} color="var(--info)" bg="var(--info-100)" title="Switch Chama" sub={`${store.groupCount()} ${store.groupCount() === 1 ? 'Chama' : 'Chamas'}`} onClick={() => openGroupSwitcher(ui, store, open)} />
+        <Item icon={FilePlus2} color="var(--warn)" bg="var(--warn-100)" title="Create a new Chama" sub="Start another group" onClick={() => openCreateGroup(ui, store, open)} />
+      </div>
+
       <div className="cha-about">ChamaOne · built for Kenyan Chamas · v1.0</div>
     </>
   );

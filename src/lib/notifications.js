@@ -22,6 +22,20 @@ async function plugin() {
 let _id = Date.now() % 100000;
 const nextId = () => (_id = (_id + 1) % 2000000000) + 1;
 
+/* ---------- web delivery ----------
+ * Android Chrome forbids `new Notification()` (it throws "Illegal
+ * constructor"); installed PWAs must go through the service worker
+ * registration. Try that first, fall back to the constructor on desktop. */
+async function webNotify(title, body) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const opts = { body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: 'chamaone' };
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    if (reg?.showNotification) { await reg.showNotification(title, opts); return; }
+  } catch { /* fall through */ }
+  try { new Notification(title, opts); } catch { /* unsupported here */ }
+}
+
 /* ---------- permission ---------- */
 export async function getPermission() {
   if (isNative()) {
@@ -62,8 +76,7 @@ export async function notify({ title, body }) {
     } catch { /* ignore */ }
     return;
   }
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  try { new Notification(title, { body, icon: '/favicon.svg' }); } catch { /* ignore */ }
+  await webNotify(title, body);
 }
 
 /* ---------- schedule for a future time (e.g. a meeting reminder) ---------- */
@@ -81,7 +94,7 @@ export async function scheduleAt({ title, body, at }) {
   // Web fallback: only if the delay is short enough that the tab is plausibly
   // still open. Native handles the real long-range scheduling.
   const delay = when.getTime() - Date.now();
-  if (delay > 0 && delay < 6 * 60 * 60 * 1000 && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-    setTimeout(() => { try { new Notification(title, { body, icon: '/favicon.svg' }); } catch { /* ignore */ } }, delay);
+  if (delay > 0 && delay < 6 * 60 * 60 * 1000) {
+    setTimeout(() => { webNotify(title, body); }, delay);
   }
 }

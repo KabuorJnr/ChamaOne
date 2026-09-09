@@ -47,7 +47,8 @@ export default function MobileShell({ store, user, onLogout }) {
     <div className="cha-m">
       <UIProvider>
         <div className="cha-app">
-          <div className="cha-scroll">
+          {/* Fixed app header — never scrolls, so content can't ride over it. */}
+          <header className="cha-header">
             {isHome ? (
               <div className="cha-top">
                 <Avatar name={user?.name} />
@@ -60,7 +61,7 @@ export default function MobileShell({ store, user, onLogout }) {
                 {Bellbtn}
               </div>
             ) : (
-              <div className="cha-schead" style={{ padding: 0, marginBottom: 4 }}>
+              <div className="cha-schead" style={{ padding: 0 }}>
                 {canBack && <button className="cha-back" onClick={back} aria-label="Back"><ChevronLeft /></button>}
                 <h2>{screenDef?.title || ''}</h2>
                 {screenDef?.addLabel && (
@@ -69,7 +70,9 @@ export default function MobileShell({ store, user, onLogout }) {
                 {!canBack && !screenDef?.addLabel && Bellbtn}
               </div>
             )}
+          </header>
 
+          <div className="cha-scroll">
             {isHome ? (
               <MobileHome store={store} user={user} open={open} />
             ) : ScreenComp ? (

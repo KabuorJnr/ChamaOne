@@ -1,6 +1,6 @@
-import { Plus, UserPlus, Users } from 'lucide-react';
+import { Plus, UserPlus, Users, MessageCircle } from 'lucide-react';
 import { fmtKES, Avatar, RoleTag, StatusPill, useUI, Empty } from './kit';
-import { openAddMember, openCollect } from './forms';
+import { openAddMember, openCollect, openInvite } from './forms';
 
 export function MembersScreen({ store, open }) {
   const ui = useUI();
@@ -20,7 +20,9 @@ export function MembersScreen({ store, open }) {
               <Avatar name={m.name} />
               <div className="cha-lt">
                 <b>{m.name} <RoleTag role={m.role} /></b>
-                <span>{store.displayPhone(m.phone)}</span>
+                <span>{store.displayPhone(m.phone)}
+                  {!m.userId && <span className="cha-pill2 cha-pill-warn" style={{ marginLeft: 6 }}>Not joined</span>}
+                </span>
               </div>
               <div className="cha-rt">
                 <StatusPill state={st.state} />
@@ -59,6 +61,11 @@ export function MemberDetail({ store, params, back }) {
           <div><div className="k">Loans</div><div className="v">{loans.length}</div></div>
         </div>
         {store.canManageMoney() && <button className="cha-btn" onClick={() => openCollect(ui, store, m.id)}><Plus size={17} /> Collect contribution</button>}
+        {store.canManageMembers() && !m.userId && (
+          <button className="cha-btn cha-btn-ghost" style={{ marginTop: 8 }} onClick={() => openInvite(ui, store, m)}>
+            <MessageCircle size={17} /> Send invite code
+          </button>
+        )}
       </div>
 
       <div className="cha-card">

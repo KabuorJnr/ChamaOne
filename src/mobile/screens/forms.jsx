@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Video, MapPin, RefreshCw } from 'lucide-react';
+import { Video, MapPin, RefreshCw, MessageCircle, Copy } from 'lucide-react';
 import { useUI, fmtKES, StkIcon } from './kit';
 import { requestPayment } from '../../lib/mpesa';
 import { scheduleAt } from '../../lib/notifications';
 import { changePassword } from '../../lib/account';
 import { isSupabaseConfigured } from '../../lib/supabase';
+import { whatsappInviteUrl } from '../../lib/invite';
 
 /* ---- open helpers (call from any screen with the UI ctx) ---- */
 export const openCollect = (ui, store, memberId) =>
@@ -109,20 +110,56 @@ function AddMemberForm({ store, close }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState('Member');
+  const [added, setAdded] = useState(null);
+
+  // Once added, hand the chairperson the member's invite code to send.
+  if (added) return <InvitePanel store={store} member={added} close={close} />;
+
   return (
     <>
       <label className="cha-field"><span>Full name</span>
         <input className="cha-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Jane Njeri" /></label>
-      <label className="cha-field"><span>Phone</span>
-        <input className="cha-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0712 345 678" /></label>
+      <label className="cha-field"><span>WhatsApp number</span>
+        <input className="cha-input" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0712 345 678" /></label>
       <label className="cha-field"><span>Role</span>
         <select className="cha-select" value={role} onChange={(e) => setRole(e.target.value)}>
           <option>Member</option><option>Treasurer</option><option>Secretary</option><option>Chairperson</option>
         </select></label>
       <button className="cha-btn" onClick={() => {
         if (!name.trim()) return toast('Enter a name');
-        store.addMember({ name, phone, role }); close(); toast(`${name} added`);
+        if (!phone.trim()) return toast('Enter their WhatsApp number');
+        setAdded(store.addMember({ name, phone, role }));
       }}>Add member</button>
+    </>
+  );
+}
+
+/* ---- member invite (code + WhatsApp hand-off) ---- */
+export const openInvite = (ui, store, member) =>
+  ui.openSheet(`Invite ${member.name}`, (close) => <InvitePanel store={store} member={member} close={close} />);
+
+function InvitePanel({ store, member, close }) {
+  const { toast } = useUI();
+  const code = member?.inviteCode || '';
+  const wa = whatsappInviteUrl({ phone: member?.phone, groupName: store.group.name, memberName: member?.name, code });
+  const copy = () => {
+    try { navigator.clipboard?.writeText(code); toast('Invite code copied'); } catch { toast(code); }
+  };
+  return (
+    <>
+      <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
+        <b style={{ color: 'var(--ink)' }}>{member.name}</b> is on the roster. Send them this code — they create their own
+        account (name + password), enter the code, and they&apos;re in.
+      </p>
+      <div style={{ background: 'var(--blue-50)', border: '1px solid var(--line)', borderRadius: 14, padding: 16, textAlign: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--muted)' }}>INVITE CODE</div>
+        <div className="cha-num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: 6, color: 'var(--blue-deep)', marginTop: 4 }}>{code}</div>
+      </div>
+      <a className="cha-btn" href={wa} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+        <MessageCircle size={18} /> Send on WhatsApp
+      </a>
+      <button className="cha-btn cha-btn-ghost" onClick={copy}><Copy size={16} /> Copy code</button>
+      <button className="cha-btn cha-btn-ghost" onClick={close}>Done</button>
     </>
   );
 }

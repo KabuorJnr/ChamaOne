@@ -44,10 +44,11 @@ async function del(table, id) {
 const memberToRow = (groupId, m) => ({
   id: m.id, group_id: groupId, user_id: m.userId || null,
   name: m.name, phone: m.phone || '', role: m.role, status: m.status, joined_at: m.joinedAt,
+  invite_code: m.inviteCode || null,
 });
 const rowToMember = (r) => ({
   id: r.id, userId: r.user_id || null, name: r.name, phone: r.phone || '',
-  role: r.role, status: r.status, joinedAt: r.joined_at,
+  role: r.role, status: r.status, joinedAt: r.joined_at, inviteCode: r.invite_code || '',
 });
 
 const cycleToRow = (groupId, c) => ({ id: c.id, group_id: groupId, label: c.label, start_date: c.startDate, end_date: c.endDate });
@@ -248,12 +249,21 @@ export async function rejectPayment(paymentId, note = '') {
   return { ok: true };
 }
 
-/* ---------- join a group by code (SECURITY DEFINER RPC) ---------- */
+/* ---------- join by code (SECURITY DEFINER RPC) ----------
+ * Accepts either a member-specific invite code (claims that member row) or
+ * the group-wide join code. Falls back to the older RPC on projects that
+ * haven't run migration 0004 yet. */
 export async function joinGroupByCode(code) {
   if (!supabase) return { ok: false, error: 'No backend configured.' };
-  const { data, error } = await supabase.rpc('join_group_by_code', { p_code: (code || '').trim() });
-  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, '') };
-  return { ok: true, groupId: data };
+  const p_code = (code || '').trim();
+  const { data, error } = await supabase.rpc('join_by_code', { p_code });
+  if (!error) return { ok: true, groupId: data };
+  if (/could not find|does not exist|schema cache/i.test(error.message)) {
+    const legacy = await supabase.rpc('join_group_by_code', { p_code });
+    if (!legacy.error) return { ok: true, groupId: legacy.data };
+    return { ok: false, error: legacy.error.message.replace(/^.*?:\s*/, '') };
+  }
+  return { ok: false, error: error.message.replace(/^.*?:\s*/, '') };
 }
 
 /* ---------- realtime: reload the active group when anything changes ---------- */
