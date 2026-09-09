@@ -9,9 +9,22 @@
  * save()/load() change — screens only ever read state + call actions.
  * ===================================================================== */
 import { useSyncExternalStore } from 'react';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow } from '../lib/db';
 
 const KEY = 'chamaone.state.v2'; // multi-group container (v1 was single-group)
 const CURRENCY = 'KES';
+
+// When a Supabase project is configured the store is backed by the shared
+// backend: it hydrates the in-memory snapshot from Supabase on sign-in and
+// mirrors every mutation back (optimistic — the UI updates instantly, the
+// write persists in the background). Otherwise it stays local-only.
+const REMOTE = isSupabaseConfigured;
+let currentUser = null; // { id, email, name } — the signed-in user (remote mode)
+export function setCurrentUser(u) { currentUser = u; }
+// Fire-and-forget a backend write; db.* already logs its own errors.
+function mirror(p) { try { if (p && typeof p.then === 'function') p.catch(() => {}); } catch { /* ignore */ } }
+const recorder = () => currentUser?.id || null;
 
 // Multi-Chama container. `root` holds every group this device manages; `state`
 // always points at the ACTIVE group's data, so every getter/action below keeps
@@ -25,7 +38,14 @@ let version = 0;
 const listeners = new Set();
 
 /* ---------- ids & helpers ---------- */
-const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// UUIDs so client-generated ids are valid Postgres uuids and the optimistic
+// in-memory row shares its id with the persisted row. Falls back to a random
+// v4-shaped string on very old engines without crypto.randomUUID.
+const uid = () => (globalThis.crypto?.randomUUID
+  ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0; const v = c === 'x' ? r : (r & 0x3) | 0x8; return v.toString(16);
+    }));
 const now = () => new Date().toISOString();
 
 export const fmtKES = (n) => 'KES ' + Math.round(Number(n) || 0).toLocaleString('en-KE');
@@ -41,8 +61,27 @@ function emit() {
   listeners.forEach((fn) => fn());
 }
 function rootFromGroup(g) { return { activeGroupId: g.group.id, groups: { [g.group.id]: g } }; }
+// A minimal empty group so synchronous getters never throw before a real
+// group is hydrated/created (the app gates the shell behind groupCount()).
+function blankGroup() {
+  const cid = uid();
+  return {
+    group: { id: uid(), name: '', type: 'Savings Group', contributionAmount: 0, frequency: 'monthly', currency: CURRENCY, createdAt: now(), activeCycleId: cid, loanInterest: 10 },
+    members: [], cycles: [{ id: cid, label: '', startDate: now(), endDate: now() }],
+    contributions: [], loans: [], meetings: [], ledger: [], notifications: [],
+    settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false }, onboarded: false,
+  };
+}
+
 function ensure() {
   if (state) return state;
+  // Remote mode: never seed demo data — the snapshot is hydrated from Supabase
+  // after sign-in (see hydrate()). Until then, hand back a safe blank.
+  if (REMOTE) {
+    if (!root) root = { activeGroupId: null, groups: {} };
+    state = root.groups[root.activeGroupId] || blankGroup();
+    return state;
+  }
   // Load the multi-group container.
   try { const raw = localStorage.getItem(KEY); if (raw) root = JSON.parse(raw); } catch { /* ignore */ }
   // Migrate the old single-group format (v1) into a one-group container.
@@ -57,6 +96,32 @@ function ensure() {
   if (!root.groups[root.activeGroupId]) root.activeGroupId = Object.keys(root.groups)[0];
   state = root.groups[root.activeGroupId];
   return state;
+}
+
+/* ---------- remote hydration ---------- */
+// Load the signed-in user's groups from Supabase into the in-memory snapshot.
+// Returns the number of groups. In local mode it just ensures the seed.
+export async function hydrate(user) {
+  if (user) currentUser = user;
+  if (!REMOTE) { ensure(); return groupCount(); }
+  const groups = await fetchGroups(currentUser?.id);
+  const states = {};
+  for (const g of groups) {
+    const gs = await loadGroupState(g.id);
+    if (gs) { gs.currentUserId = currentUser?.id; states[g.id] = gs; }
+  }
+  root = { activeGroupId: Object.keys(states)[0] || null, groups: states };
+  state = root.groups[root.activeGroupId] || null;
+  version++; listeners.forEach((fn) => fn());
+  return Object.keys(states).length;
+}
+
+// The caller's own membership id in the active group — used so votes satisfy
+// the "cast only your own vote" RLS policy (falls back to the first member).
+function myMemberId() {
+  const ms = members();
+  const mine = currentUser ? ms.find((m) => m.userId === currentUser.id) : null;
+  return (mine || ms[0])?.id;
 }
 
 /* ---------- multiple groups ---------- */
@@ -76,10 +141,15 @@ export function switchGroup(id) {
 }
 export function deleteGroup(id) {
   ensure();
+  if (REMOTE) mirror(db.deleteGroup(id));
   delete root.groups[id];
-  if (!Object.keys(root.groups).length) { const g = seedGroup(); root.groups[g.group.id] = g; root.activeGroupId = g.group.id; }
-  else if (root.activeGroupId === id) root.activeGroupId = Object.keys(root.groups)[0];
-  state = root.groups[root.activeGroupId];
+  if (!Object.keys(root.groups).length) {
+    if (REMOTE) { root.activeGroupId = null; state = blankGroup(); }
+    else { const g = seedGroup(); root.groups[g.group.id] = g; root.activeGroupId = g.group.id; state = g; }
+  } else {
+    if (root.activeGroupId === id) root.activeGroupId = Object.keys(root.groups)[0];
+    state = root.groups[root.activeGroupId];
+  }
   emit();
 }
 
@@ -95,11 +165,13 @@ export const activeCycle = () => {
 function addLedgerEntry({ type, amount, direction, memberId, note, ref }) {
   const balBefore = poolBalance();
   const delta = direction === 'in' ? amount : -amount;
-  state.ledger.unshift({
+  const entry = {
     id: uid('lx'), date: now(), type, amount, direction,
     memberId: memberId || null, note: note || '', ref: ref || '',
     balanceAfter: balBefore + delta,
-  });
+  };
+  state.ledger.unshift(entry);
+  return entry;
 }
 export function poolBalance() {
   return ensure().ledger.reduce((t, e) => t + (e.direction === 'in' ? e.amount : -e.amount), 0);
@@ -160,11 +232,15 @@ function buildGroup({ name, type, amount, frequency, members: mem }) {
 export function createGroup({ name, type, amount, frequency, members: mem }) {
   ensure();
   const g = buildGroup({ name, type, amount, frequency, members: mem });
+  // The creator is the Chairperson and the first member linked to this account.
+  if (REMOTE && currentUser && g.members[0]) g.members[0].userId = currentUser.id;
+  g.currentUserId = currentUser?.id;
   root.groups[g.group.id] = g;
   root.activeGroupId = g.group.id;
   state = g;
   notify('system', `Welcome to ChamaOne! "${name}" is ready.`);
   emit();
+  if (REMOTE && currentUser) mirror(createGroupRemote(g, currentUser.id));
 }
 function makeCycle(id, frequency) {
   const start = new Date();
@@ -186,8 +262,13 @@ export function startNextCycle() {
   g.activeCycleId = id;
   notify('cycle', `New ${g.frequency} cycle started: ${c.label}`);
   emit();
+  if (REMOTE) { mirror(db.addCycle(g.id, c)); mirror(db.updateGroup(g.id, { active_cycle_id: id })); }
 }
-export function updateGroup(patch) { Object.assign(ensure().group, patch); emit(); }
+export function updateGroup(patch) {
+  Object.assign(ensure().group, patch);
+  emit();
+  if (REMOTE) mirror(db.updateGroup(state.group.id, groupPatchToRow(patch)));
+}
 export function updateSettings(patch) { Object.assign(ensure().settings, patch); emit(); }
 
 /* ---------- members ---------- */
@@ -196,12 +277,14 @@ export function addMember({ name, phone, role }) {
   ensure().members.push(m);
   notify('member', `${m.name} joined the group.`);
   emit();
+  if (REMOTE) mirror(db.addMember(state.group.id, m));
   return m;
 }
 export function removeMember(id) {
   const m = memberById(id);
   if (m) m.status = 'removed';
   emit();
+  if (REMOTE) mirror(db.setMemberStatus(id, 'removed'));
 }
 
 /* ---------- contributions ---------- */
@@ -210,9 +293,10 @@ export function recordContribution({ memberId, amount, method, ref, cycleId }) {
   const c = { id: uid('cn'), memberId, cycleId: cy, amount: Number(amount), method: method || 'cash', ref: ref || '', status: 'confirmed', date: now() };
   ensure().contributions.push(c);
   const m = memberById(memberId);
-  addLedgerEntry({ type: 'Contribution', amount: c.amount, direction: 'in', memberId, note: `${m ? m.name : 'Member'} — ${cycleLabel(cy)}`, ref: c.ref });
+  const lx = addLedgerEntry({ type: 'Contribution', amount: c.amount, direction: 'in', memberId, note: `${m ? m.name : 'Member'} — ${cycleLabel(cy)}`, ref: c.ref });
   notify('money', `${m ? m.name : 'A member'} contributed ${fmtKES(c.amount)}.`);
   emit();
+  if (REMOTE) { mirror(db.addContribution(state.group.id, c, recorder())); mirror(db.addLedger(state.group.id, lx)); }
   return c;
 }
 export function cycleLabel(id) {
@@ -259,19 +343,23 @@ export function applyLoan({ memberId, principal, termMonths, purpose }) {
   const m = memberById(memberId);
   notify('loan', `${m ? m.name : 'A member'} applied for a ${fmtKES(l.principal)} loan — vote needed.`);
   emit();
+  if (REMOTE) mirror(db.addLoan(state.group.id, l));
   return l;
 }
 export const loanById = (id) => ensure().loans.find((l) => l.id === id);
 export function voteLoan(loanId, voterId, vote) {
   const l = loanById(loanId);
   if (!l || l.status !== 'pending') return;
-  l.votes[voterId] = vote;
+  const voter = REMOTE ? myMemberId() : voterId;   // RLS: you may only cast your own vote
+  l.votes[voter] = vote;
   const total = members().length;
   const yes = Object.values(l.votes).filter((v) => v === 'yes').length;
   const no = Object.values(l.votes).filter((v) => v === 'no').length;
-  if (yes > total / 2) { l.status = 'approved'; notify('loan', `Loan for ${memberById(l.memberId)?.name} approved.`); }
-  else if (no >= total / 2) { l.status = 'rejected'; }
+  let newStatus = null;
+  if (yes > total / 2) { l.status = 'approved'; newStatus = 'approved'; notify('loan', `Loan for ${memberById(l.memberId)?.name} approved.`); }
+  else if (no >= total / 2) { l.status = 'rejected'; newStatus = 'rejected'; }
   emit();
+  if (REMOTE) { mirror(db.voteLoan(loanId, voter, vote)); if (newStatus) mirror(db.setLoan(loanId, { status: newStatus })); }
 }
 export function loanTotals(l) {
   const interest = (l.principal * l.interestRate) / 100;
@@ -286,9 +374,10 @@ export function disburseLoan(id) {
   l.status = 'active';
   l.disbursedAt = now();
   const m = memberById(l.memberId);
-  addLedgerEntry({ type: 'Loan disbursement', amount: l.principal, direction: 'out', memberId: l.memberId, note: `Loan to ${m ? m.name : 'member'} @ ${l.interestRate}%` });
+  const lx = addLedgerEntry({ type: 'Loan disbursement', amount: l.principal, direction: 'out', memberId: l.memberId, note: `Loan to ${m ? m.name : 'member'} @ ${l.interestRate}%` });
   notify('loan', `${fmtKES(l.principal)} disbursed to ${m ? m.name : 'member'}.`);
   emit();
+  if (REMOTE) { mirror(db.setLoan(id, { status: 'active', disbursed_at: l.disbursedAt })); mirror(db.addLedger(state.group.id, lx)); }
   return { ok: true };
 }
 export function repayLoan(id, amount) {
@@ -296,11 +385,18 @@ export function repayLoan(id, amount) {
   if (!l || l.status !== 'active') return;
   const t = loanTotals(l);
   const amt = Math.min(Number(amount), t.outstanding);
-  l.repayments.push({ id: uid('rp'), amount: amt, date: now() });
+  const rp = { id: uid('rp'), amount: amt, date: now() };
+  l.repayments.push(rp);
   const m = memberById(l.memberId);
-  addLedgerEntry({ type: 'Loan repayment', amount: amt, direction: 'in', memberId: l.memberId, note: `Repayment from ${m ? m.name : 'member'}` });
-  if (loanTotals(l).outstanding <= 0) { l.status = 'repaid'; notify('loan', `${m ? m.name : 'Member'} fully repaid their loan.`); }
+  const lx = addLedgerEntry({ type: 'Loan repayment', amount: amt, direction: 'in', memberId: l.memberId, note: `Repayment from ${m ? m.name : 'member'}` });
+  let repaid = false;
+  if (loanTotals(l).outstanding <= 0) { l.status = 'repaid'; repaid = true; notify('loan', `${m ? m.name : 'Member'} fully repaid their loan.`); }
   emit();
+  if (REMOTE) {
+    mirror(db.addRepayment(id, rp, recorder()));
+    mirror(db.addLedger(state.group.id, lx));
+    if (repaid) mirror(db.setLoan(id, { status: 'repaid' }));
+  }
 }
 
 /* ---------- meetings & voting ---------- */
@@ -314,6 +410,7 @@ export function createMeeting({ title, date, location, agenda, online, link }) {
   ensure().meetings.unshift(mt);
   notify('meeting', `${online ? 'Online meeting' : 'Meeting'} scheduled: ${title} — ${fmtDateTime(mt.date)}.`);
   emit();
+  if (REMOTE) mirror(db.addMeeting(state.group.id, mt));
   return mt;
 }
 // Build a shareable video link for an online meeting (Jitsi rooms need no
@@ -325,15 +422,20 @@ export function makeMeetingLink(title) {
 export const meetingById = (id) => ensure().meetings.find((m) => m.id === id);
 export function addMotion(meetingId, text) {
   const mt = meetingById(meetingId);
-  if (mt) mt.motions.push({ id: uid('mo'), text, votes: {}, status: 'open' });
+  if (!mt) return;
+  const mo = { id: uid('mo'), text, votes: {}, status: 'open' };
+  mt.motions.push(mo);
   emit();
+  if (REMOTE) mirror(db.addMotion(meetingId, mo));
 }
 export function voteMotion(meetingId, motionId, voterId, vote) {
   const mt = meetingById(meetingId);
   const mo = mt && mt.motions.find((x) => x.id === motionId);
   if (!mo || mo.status !== 'open') return;
-  mo.votes[voterId] = vote;
+  const voter = REMOTE ? myMemberId() : voterId;   // RLS: you may only cast your own vote
+  mo.votes[voter] = vote;
   emit();
+  if (REMOTE) mirror(db.voteMotion(motionId, voter, vote));
 }
 export function closeMotion(meetingId, motionId) {
   const mt = meetingById(meetingId);
@@ -343,11 +445,13 @@ export function closeMotion(meetingId, motionId) {
   const no = Object.values(mo.votes).filter((v) => v === 'no').length;
   mo.status = yes > no ? 'passed' : 'failed';
   emit();
+  if (REMOTE) mirror(db.setMotion(motionId, { status: mo.status }));
 }
 export function saveMinutes(meetingId, minutes) {
   const mt = meetingById(meetingId);
   if (mt) { mt.minutes = minutes; mt.status = 'completed'; }
   emit();
+  if (REMOTE && mt) mirror(db.setMeeting(meetingId, { minutes, status: 'completed' }));
 }
 
 /* ---------- reports ---------- */
@@ -380,8 +484,13 @@ export function toCSV() {
 /* ---------- lifecycle ---------- */
 export function getState() { return state; } // raw current state (may be null pre-init)
 // reset/wipe rebuild the whole container as a single fresh demo group.
-export function reset() { const g = seedGroup(); root = rootFromGroup(g); state = g; emit(); }
+export function reset() {
+  // Remote mode has no demo data to reload — re-pull the real state instead.
+  if (REMOTE) { hydrate(currentUser); return; }
+  const g = seedGroup(); root = rootFromGroup(g); state = g; emit();
+}
 export function wipe() {
+  if (REMOTE) { hydrate(currentUser); return; }
   try { localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); } catch { /* ignore */ }
   reset();
 }

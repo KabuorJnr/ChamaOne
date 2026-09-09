@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import MobileShell from './mobile/MobileShell';
 import MobileAuth from './mobile/MobileAuth';
-import { useChama, setNotifSink, getState } from './store/chama';
+import MobileOnboard from './mobile/MobileOnboard';
+import { useChama, setNotifSink, getState, hydrate, setCurrentUser } from './store/chama';
 import { notify as deviceNotify } from './lib/notifications';
 import { currentUser, onAuthChange, signOut } from './lib/account';
 import './mobile/mobile.css';
@@ -27,6 +28,7 @@ export default function App() {
   // Auth session — the signed-in user object (null = show the login gate).
   const [account, setAccount] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   // Resolve the current session on cold start, then keep it in sync with
   // Supabase auth changes (sign-in/out/token refresh across devices).
@@ -36,6 +38,19 @@ export default function App() {
     const unsub = onAuthChange((u) => { if (alive) setAccount(u); });
     return () => { alive = false; unsub(); };
   }, []);
+
+  // Once signed in, load this user's groups from the backend into the store.
+  useEffect(() => {
+    let alive = true;
+    if (account) {
+      setHydrated(false);
+      setCurrentUser(account);
+      hydrate(account).finally(() => { if (alive) setHydrated(true); });
+    } else {
+      setHydrated(false);
+    }
+    return () => { alive = false; };
+  }, [account?.id]);
 
   useEffect(() => {
     const t = setTimeout(() => setSplash(false), 1400);
@@ -47,25 +62,31 @@ export default function App() {
 
   // Hold the splash until the branded delay AND the session check are both done,
   // so a signed-in user never flashes the login screen.
-  if (splash || !authReady) {
-    return (
-      <div className="cha-m">
-        <div className="cha-splash">
-          <div className="cha-splash-logo">
-            <span className="cha-ribbon" />
-            <Logo className="cha-logo cha-logo--on-dark" />
-          </div>
-          <div className="cha-brand">ChamaOne</div>
-          <div className="cha-tag">Your Chama, in your pocket</div>
-        </div>
-      </div>
-    );
-  }
+  if (splash || !authReady) return <Splash />;
 
   // Gate the app behind the account login until signed in.
   if (!account) return <MobileAuth onAuthed={(u) => setAccount(u)} />;
 
+  // Signed in — wait for the backend load, then onboard or run the app.
+  if (!hydrated) return <Splash />;
+  if (store.groupCount() === 0) return <MobileOnboard store={store} user={user} />;
+
   return <MobileShell store={store} user={user} onLogout={onLogout} />;
+}
+
+function Splash() {
+  return (
+    <div className="cha-m">
+      <div className="cha-splash">
+        <div className="cha-splash-logo">
+          <span className="cha-ribbon" />
+          <Logo className="cha-logo cha-logo--on-dark" />
+        </div>
+        <div className="cha-brand">ChamaOne</div>
+        <div className="cha-tag">Your Chama, in your pocket</div>
+      </div>
+    </div>
+  );
 }
 
 export function Logo({ className }) {

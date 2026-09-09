@@ -8,6 +8,7 @@ import { fmtKES, BarChart, SecHead, useUI, downloadText } from './kit';
 import { fmtDate } from '../../store/chama';
 import { openCreateGroup, openGroupSwitcher, openChangePassword } from './forms';
 import { ensurePermission, notify as deviceNotify } from '../../lib/notifications';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 /* ---------- More hub ---------- */
 export function MoreScreen({ store, open, user, onLogout }) {
@@ -210,14 +211,20 @@ export function SettingsScreen({ store, open }) {
 
       <div className="cha-card">
         <SecHead title="Data" />
-        <p className="cha-muted cha-small">Stored on this device (offline-first). Wire Supabase to sync across members &amp; devices — see README.</p>
+        <p className="cha-muted cha-small">
+          {isSupabaseConfigured
+            ? 'Synced to your ChamaOne account — shared with members and available on all your devices.'
+            : 'Stored on this device (offline-first). Wire Supabase to sync across members & devices — see README.'}
+        </p>
         {store.groupCount() > 1 && (
-          <button className="cha-btn cha-btn-danger cha-btn-sm" style={{ marginBottom: 10 }} onClick={() => confirm('Delete this Chama?', `“${g.name}” and all its records will be removed from this device.`, () => { store.deleteGroup(g.id); toast('Chama deleted'); open('home'); })}><Trash2 size={15} /> Delete “{g.name}”</button>
+          <button className="cha-btn cha-btn-danger cha-btn-sm" style={{ marginBottom: 10 }} onClick={() => confirm('Delete this Chama?', isSupabaseConfigured ? `“${g.name}” and all its records will be permanently deleted for everyone.` : `“${g.name}” and all its records will be removed from this device.`, () => { store.deleteGroup(g.id); toast('Chama deleted'); open('home'); })}><Trash2 size={15} /> Delete “{g.name}”</button>
         )}
-        <div className="cha-btn-row">
-          <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => confirm('Reload demo data?', 'Replaces ALL data with the single sample Chama.', () => { store.reset(); toast('Demo data loaded'); open('home'); })}><RefreshCw size={15} /> Reload demo</button>
-          <button className="cha-btn cha-btn-danger cha-btn-sm" onClick={() => confirm('Reset everything?', 'This clears ALL Chamas on this device.', () => { store.wipe(); toast('Reset complete'); open('home'); })}><Trash2 size={15} /> Reset all</button>
-        </div>
+        {!isSupabaseConfigured && (
+          <div className="cha-btn-row">
+            <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => confirm('Reload demo data?', 'Replaces ALL data with the single sample Chama.', () => { store.reset(); toast('Demo data loaded'); open('home'); })}><RefreshCw size={15} /> Reload demo</button>
+            <button className="cha-btn cha-btn-danger cha-btn-sm" onClick={() => confirm('Reset everything?', 'This clears ALL Chamas on this device.', () => { store.wipe(); toast('Reset complete'); open('home'); })}><Trash2 size={15} /> Reset all</button>
+          </div>
+        )}
       </div>
     </>
   );
