@@ -53,7 +53,9 @@ export default function MobileShell({ store, user, onLogout }) {
                 <Avatar name={user?.name} />
                 <div className="cha-who">
                   <div className="cha-hi">{greeting}</div>
-                  <div className="cha-nm">{user?.name || 'Chairperson'}</div>
+                  <div className="cha-nm">{user?.name || 'Chairperson'}
+                    {user?.role && <span className="cha-pill2 cha-pill-info" style={{ marginLeft: 6, verticalAlign: 'middle' }}>{user.role}</span>}
+                  </div>
                 </div>
                 {Bellbtn}
               </div>

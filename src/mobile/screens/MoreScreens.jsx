@@ -150,6 +150,8 @@ export function SettingsScreen({ store, open }) {
   const { toast, confirm } = useUI();
   const g = store.group;
   const s = store.settings;
+  const canMoney = store.canManageMoney();
+  const isChair = store.myRole() === 'Chairperson';
   const [name, setName] = useState(g.name);
   const [amt, setAmt] = useState(g.contributionAmount);
   const [interest, setInterest] = useState(g.loanInterest);
@@ -172,18 +174,20 @@ export function SettingsScreen({ store, open }) {
 
   return (
     <>
+      {canMoney && (
       <div className="cha-card">
         <SecHead title="Group" />
-        <label className="cha-field" style={{ marginTop: 10 }}><span>Group name</span><input className="cha-input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="cha-field" style={{ marginTop: 10 }}><span>Group name</span><input className="cha-input" value={name} onChange={(e) => setName(e.target.value)} disabled={!isChair} /></label>
         <div className="cha-grid2">
-          <label className="cha-field"><span>Contribution ({g.frequency})</span><input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
-          <label className="cha-field"><span>Loan interest (%)</span><input className="cha-input cha-num" type="number" value={interest} onChange={(e) => setInterest(e.target.value)} /></label>
+          <label className="cha-field"><span>Contribution ({g.frequency})</span><input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} disabled={!isChair} /></label>
+          <label className="cha-field"><span>Loan interest (%)</span><input className="cha-input cha-num" type="number" value={interest} onChange={(e) => setInterest(e.target.value)} disabled={!isChair} /></label>
         </div>
         <div className="cha-btn-row">
-          <button className="cha-btn cha-btn-sm" onClick={() => { store.updateGroup({ name: name.trim() || g.name, contributionAmount: Number(amt) || 0, loanInterest: Number(interest) || 0 }); toast('Group saved'); }}>Save group</button>
+          {isChair && <button className="cha-btn cha-btn-sm" onClick={() => { store.updateGroup({ name: name.trim() || g.name, contributionAmount: Number(amt) || 0, loanInterest: Number(interest) || 0 }); toast('Group saved'); }}>Save group</button>}
           <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => confirm('Start next cycle?', 'Members’ contribution status resets for the new period.', () => { store.startNextCycle(); toast('New cycle started'); open('home'); })}>Next cycle →</button>
         </div>
       </div>
+      )}
 
       <div className="cha-card">
         <SecHead title="Notifications" />
@@ -197,6 +201,7 @@ export function SettingsScreen({ store, open }) {
         )}
       </div>
 
+      {canMoney && (
       <div className="cha-card">
         <SecHead title="M-Pesa (Daraja)" />
         <label className="cha-field" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
@@ -208,6 +213,7 @@ export function SettingsScreen({ store, open }) {
         <label className="cha-field"><span>Callback URL</span><input className="cha-input" value={cb} onChange={(e) => setCb(e.target.value)} placeholder="https://…/callback" /></label>
         <button className="cha-btn cha-btn-sm" onClick={() => { store.updateSettings({ simulateMpesa: sim, shortcode: shortcode.trim(), callbackUrl: cb.trim() }); toast('M-Pesa settings saved'); }}>Save M-Pesa</button>
       </div>
+      )}
 
       <div className="cha-card">
         <SecHead title="Data" />
@@ -216,7 +222,7 @@ export function SettingsScreen({ store, open }) {
             ? 'Synced to your ChamaOne account — shared with members and available on all your devices.'
             : 'Stored on this device (offline-first). Wire Supabase to sync across members & devices — see README.'}
         </p>
-        {store.groupCount() > 1 && (
+        {isChair && store.groupCount() > 1 && (
           <button className="cha-btn cha-btn-danger cha-btn-sm" style={{ marginBottom: 10 }} onClick={() => confirm('Delete this Chama?', isSupabaseConfigured ? `“${g.name}” and all its records will be permanently deleted for everyone.` : `“${g.name}” and all its records will be removed from this device.`, () => { store.deleteGroup(g.id); toast('Chama deleted'); open('home'); })}><Trash2 size={15} /> Delete “{g.name}”</button>
         )}
         {!isSupabaseConfigured && (

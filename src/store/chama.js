@@ -127,6 +127,20 @@ function myMemberId() {
   return (mine || ms[0])?.id;
 }
 
+/* ---------- roles & capabilities (mirror the RLS policies) ---------- */
+// Local-only mode has no accounts, so the single operator is treated as the
+// Chairperson — nothing is hidden. In remote mode the role comes from the
+// caller's own membership in the active group.
+export function myRole() {
+  if (!REMOTE) return 'Chairperson';
+  const ms = members();
+  const mine = currentUser ? ms.find((m) => m.userId === currentUser.id) : null;
+  return mine?.role || 'Member';
+}
+export const canManageMoney = () => ['Chairperson', 'Treasurer'].includes(myRole());     // contributions, loans $, cycles
+export const canManageMeetings = () => ['Chairperson', 'Secretary'].includes(myRole());  // meetings & motions
+export const canManageMembers = () => ['Chairperson', 'Treasurer'].includes(myRole());   // add/remove members
+
 /* ---------- realtime sync ---------- */
 let rtUnsub = null;
 let rtTimer = null;
@@ -560,6 +574,7 @@ const actions = {
   poolBalance, financialSummary, contributionTrend, toCSV,
   notify: (t, x) => { notify(t, x); emit(); }, unreadCount, markAllRead, markRead,
   members, memberById, activeCycle, displayPhone, normalizePhone,
+  myRole, canManageMoney, canManageMeetings, canManageMembers,
   reset, wipe,
 };
 

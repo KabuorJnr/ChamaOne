@@ -9,6 +9,7 @@ function openExternal(url) { try { window.open(url, '_blank', 'noopener'); } cat
 
 export function MeetingsScreen({ store, open }) {
   const ui = useUI();
+  const canMeet = store.canManageMeetings();
   const meetings = [...store.meetings].sort((a, b) => new Date(b.date) - new Date(a.date));
   const upcoming = meetings.filter((m) => m.status !== 'completed');
   const past = meetings.filter((m) => m.status === 'completed');
@@ -31,7 +32,7 @@ export function MeetingsScreen({ store, open }) {
 
   return (
     <>
-      <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => openNewMeeting(ui, store)}><Plus size={16} /> Schedule a meeting</button>
+      {canMeet && <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => openNewMeeting(ui, store)}><Plus size={16} /> Schedule a meeting</button>}
       {upcoming.length > 0 && (
         <div className="cha-list-card">
           <div className="cha-li" style={{ cursor: 'default' }}><div className="cha-lt"><span>Upcoming &amp; open</span></div></div>
@@ -47,7 +48,7 @@ export function MeetingsScreen({ store, open }) {
       {meetings.length === 0 && (
         <Empty icon={Vote} title="No meetings yet"
           text="Schedule a meeting, set an agenda, and let members — even in the diaspora — vote on motions in-app.">
-          <button className="cha-btn" onClick={() => openNewMeeting(ui, store)}>Schedule meeting</button>
+          {canMeet && <button className="cha-btn" onClick={() => openNewMeeting(ui, store)}>Schedule meeting</button>}
         </Empty>
       )}
     </>
@@ -60,6 +61,7 @@ export function MeetingDetail({ store, params }) {
   const [minutes, setMinutes] = useState(mt?.minutes || '');
   if (!mt) return <Empty icon={CalendarDays} title="Not found" text="This meeting no longer exists." />;
   const voterId = store.members()[0].id;
+  const canMeet = store.canManageMeetings();
 
   return (
     <>
@@ -88,21 +90,27 @@ export function MeetingDetail({ store, params }) {
 
       <div className="cha-card">
         <div className="cha-sec" style={{ margin: '0 0 10px' }}><h5>Motions &amp; voting</h5></div>
-        {mt.motions.map((mo) => <Motion key={mo.id} mo={mo} mt={mt} store={store} voterId={voterId} ui={ui} />)}
+        {mt.motions.map((mo) => <Motion key={mo.id} mo={mo} mt={mt} store={store} voterId={voterId} ui={ui} canMeet={canMeet} />)}
         {mt.motions.length === 0 && <div className="cha-muted cha-small">No motions yet.</div>}
-        <button className="cha-btn cha-btn-ghost cha-btn-sm" style={{ marginTop: 10 }} onClick={() => addMotion(ui, store, mt.id)}><Plus size={16} /> Add motion</button>
+        {canMeet && <button className="cha-btn cha-btn-ghost cha-btn-sm" style={{ marginTop: 10 }} onClick={() => addMotion(ui, store, mt.id)}><Plus size={16} /> Add motion</button>}
       </div>
 
       <div className="cha-card">
         <div className="cha-sec" style={{ margin: '0 0 10px' }}><h5>Minutes</h5></div>
-        <textarea className="cha-textarea" rows={3} value={minutes} onChange={(e) => setMinutes(e.target.value)} placeholder="Record decisions…" />
-        <button className="cha-btn cha-btn-sm" style={{ marginTop: 8 }} onClick={() => { store.saveMinutes(mt.id, minutes); ui.toast('Minutes saved'); }}>Save minutes</button>
+        {canMeet ? (
+          <>
+            <textarea className="cha-textarea" rows={3} value={minutes} onChange={(e) => setMinutes(e.target.value)} placeholder="Record decisions…" />
+            <button className="cha-btn cha-btn-sm" style={{ marginTop: 8 }} onClick={() => { store.saveMinutes(mt.id, minutes); ui.toast('Minutes saved'); }}>Save minutes</button>
+          </>
+        ) : (
+          <p className="cha-muted cha-small" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{mt.minutes || 'No minutes recorded yet.'}</p>
+        )}
       </div>
     </>
   );
 }
 
-function Motion({ mo, mt, store, voterId, ui }) {
+function Motion({ mo, mt, store, voterId, ui, canMeet }) {
   const votes = Object.values(mo.votes);
   const yes = votes.filter((v) => v === 'yes').length;
   const no = votes.filter((v) => v === 'no').length;
@@ -120,7 +128,7 @@ function Motion({ mo, mt, store, voterId, ui }) {
           <button className="cha-btn cha-btn-sm cha-btn-ok" onClick={() => store.voteMotion(mt.id, mo.id, voterId, 'yes')}>Yes</button>
           <button className="cha-btn cha-btn-sm cha-btn-danger" onClick={() => store.voteMotion(mt.id, mo.id, voterId, 'no')}>No</button>
           <button className="cha-btn cha-btn-sm cha-btn-ghost" onClick={() => store.voteMotion(mt.id, mo.id, voterId, 'abstain')}>Abstain</button>
-          <button className="cha-btn cha-btn-sm" onClick={() => { store.closeMotion(mt.id, mo.id); ui.toast('Motion closed'); }}>Close</button>
+          {canMeet && <button className="cha-btn cha-btn-sm" onClick={() => { store.closeMotion(mt.id, mo.id); ui.toast('Motion closed'); }}>Close</button>}
         </div>
       ) : (
         <div className={`cha-motion-res ${mo.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>

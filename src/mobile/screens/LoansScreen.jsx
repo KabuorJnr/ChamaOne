@@ -41,6 +41,7 @@ function LoanCard({ l, store, ui }) {
   const yes = Object.values(l.votes).filter((v) => v === 'yes').length;
   const no = Object.values(l.votes).filter((v) => v === 'no').length;
   const need = store.members().length;
+  const canMoney = store.canManageMoney();
   const vote = (v) => { store.voteLoan(l.id, store.members()[0].id, v); ui.toast('Vote recorded'); };
 
   let body = null;
@@ -56,16 +57,18 @@ function LoanCard({ l, store, ui }) {
       </>
     );
   } else if (l.status === 'approved') {
-    body = <button className="cha-btn cha-btn-sm" style={{ marginTop: 8 }} onClick={() => {
-      const r = store.disburseLoan(l.id); ui.toast(r && r.error === 'insufficient' ? 'Not enough funds in the pool' : 'Loan disbursed');
-    }}><Banknote size={16} /> Disburse {fmtKES(l.principal)}</button>;
+    body = canMoney
+      ? <button className="cha-btn cha-btn-sm" style={{ marginTop: 8 }} onClick={() => {
+          const r = store.disburseLoan(l.id); ui.toast(r && r.error === 'insufficient' ? 'Not enough funds in the pool' : 'Loan disbursed');
+        }}><Banknote size={16} /> Disburse {fmtKES(l.principal)}</button>
+      : <div className="cha-muted cha-small" style={{ marginTop: 8 }}>Approved — awaiting disbursement by the treasurer.</div>;
   } else if (l.status === 'active') {
     const pct = t.total ? Math.round((t.repaid / t.total) * 100) : 0;
     body = (
       <>
         <div className="cha-prog" style={{ marginTop: 10 }}><i style={{ width: `${pct}%`, background: 'var(--good)' }} /></div>
         <div className="cha-repay-meta"><span>Repaid {fmtKES(t.repaid)}</span><span>Outstanding {fmtKES(t.outstanding)}</span></div>
-        <button className="cha-btn cha-btn-sm cha-btn-ok" onClick={() => openRepay(ui, store, l.id)}><Plus size={16} /> Record repayment</button>
+        {canMoney && <button className="cha-btn cha-btn-sm cha-btn-ok" onClick={() => openRepay(ui, store, l.id)}><Plus size={16} /> Record repayment</button>}
       </>
     );
   } else if (l.status === 'repaid') {

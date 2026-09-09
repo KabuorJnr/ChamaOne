@@ -31,6 +31,7 @@ export default function MobileHome({ store, open }) {
   const vote = (loanId, v) => { store.voteLoan(loanId, store.members()[0].id, v); ui.toast('Vote recorded'); };
 
   const groupCount = store.groupCount();
+  const canMoney = store.canManageMoney();
 
   return (
     <>
@@ -47,7 +48,7 @@ export default function MobileHome({ store, open }) {
       {/* pool hero */}
       <div className="cha-hero-card">
         <span className="cha-pill">{store.group.type.toUpperCase()}</span>
-        <button className="cha-hero-cta" onClick={() => openCollect(ui, store)}><Plus />Collect</button>
+        {canMoney && <button className="cha-hero-cta" onClick={() => openCollect(ui, store)}><Plus />Collect</button>}
         <div className="cha-hero-lb">Group pool balance</div>
         <div className="cha-hero-amt cha-num">{fmtKES(fin.balance)}</div>
         <div className="cha-hero-meta">
@@ -131,7 +132,9 @@ export default function MobileHome({ store, open }) {
       {/* quick actions */}
       <SecHead title="Quick actions" />
       <div className="cha-qa-grid">
-        <QA icon={Plus} label="Collect" color={GOOD} onClick={() => openCollect(ui, store)} />
+        {canMoney
+          ? <QA icon={Plus} label="Collect" color={GOOD} onClick={() => openCollect(ui, store)} />
+          : <QA icon={Users} label="Members" color={GOOD} onClick={() => open('members')} />}
         <QA icon={CreditCard} label="Loans" color={BLUE} onClick={() => open('loans')} />
         <QA icon={Vote} label="Meetings" color={VIOLET} onClick={() => open('meetings')} />
         <QA icon={TrendingUp} label="Reports" color={WARN} onClick={() => open('reports')} />

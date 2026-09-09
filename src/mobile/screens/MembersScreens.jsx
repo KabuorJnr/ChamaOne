@@ -11,7 +11,7 @@ export function MembersScreen({ store, open }) {
       <div className="cha-list-card">
         <div className="cha-li" style={{ cursor: 'default' }}>
           <div className="cha-lt"><span>{ms.length} members · {cy.label}</span></div>
-          <button className="cha-chip2" onClick={() => openAddMember(ui, store)}><Plus size={13} style={{ verticalAlign: '-2px' }} /> Add</button>
+          {store.canManageMembers() && <button className="cha-chip2" onClick={() => openAddMember(ui, store)}><Plus size={13} style={{ verticalAlign: '-2px' }} /> Add</button>}
         </div>
         {ms.map((m) => {
           const st = store.memberStatus(m.id, cy.id);
@@ -58,7 +58,7 @@ export function MemberDetail({ store, params, back }) {
           <div><div className="k">Lifetime</div><div className="v cha-num">{fmtKES(total)}</div></div>
           <div><div className="k">Loans</div><div className="v">{loans.length}</div></div>
         </div>
-        <button className="cha-btn" onClick={() => openCollect(ui, store, m.id)}><Plus size={17} /> Collect contribution</button>
+        {store.canManageMoney() && <button className="cha-btn" onClick={() => openCollect(ui, store, m.id)}><Plus size={17} /> Collect contribution</button>}
       </div>
 
       <div className="cha-card">
@@ -73,10 +73,12 @@ export function MemberDetail({ store, params, back }) {
         {contribs.length === 0 && <div className="cha-muted cha-small">None yet.</div>}
       </div>
 
-      <button className="cha-btn cha-btn-danger" onClick={() =>
-        confirm('Remove member?', `${m.name} will be removed from the group.`, () => { store.removeMember(m.id); toast('Member removed'); back(); })}>
-        Remove from group
-      </button>
+      {store.canManageMembers() && (
+        <button className="cha-btn cha-btn-danger" onClick={() =>
+          confirm('Remove member?', `${m.name} will be removed from the group.`, () => { store.removeMember(m.id); toast('Member removed'); back(); })}>
+          Remove from group
+        </button>
+      )}
     </>
   );
 }

@@ -58,7 +58,7 @@ export default function App() {
   }, []);
 
   const onLogout = () => { stopRealtime(); signOut(); setAccount(null); };
-  const user = { name: account?.name || 'Member', role: 'chairperson', onLogout };
+  const user = { name: account?.name || 'Member', role: store.myRole(), onLogout };
 
   // Hold the splash until the branded delay AND the session check are both done,
   // so a signed-in user never flashes the login screen.
