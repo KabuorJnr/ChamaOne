@@ -1,11 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // Relative base so the built assets load from Capacitor's file:// origin on
 // device; on the web host (Vercel) they resolve from the root just the same.
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url)));
+
 export default defineConfig({
   base: './',
+  // Single source of truth for the version shown in-app and stamped on the APK.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   build: { outDir: 'dist' },
   plugins: [
     react(),

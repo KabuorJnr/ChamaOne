@@ -1,7 +1,7 @@
 {
   "name": "chamaone",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "ChamaOne — Chama & savings-group manager. Built in the EduOne mobile style (React + Capacitor).",
   "scripts": {
@@ -14,7 +14,7 @@
     "android:open": "cap open android",
     "android:run": "vite build && cap sync android && cap run android",
     "assets": "capacitor-assets generate --android",
-    "android:apk": "npm run build && npx cap sync android && capacitor-assets generate --android"
+    "android:apk": "npm run build && npx cap sync android && capacitor-assets generate --android && node scripts/stamp-android-version.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

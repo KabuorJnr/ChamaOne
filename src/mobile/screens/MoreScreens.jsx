@@ -61,7 +61,7 @@ export function MoreScreen({ store, open, user, onLogout }) {
         <Item icon={FilePlus2} color="var(--warn)" bg="var(--warn-100)" title="Create a new Chama" sub="Start another group" onClick={() => openCreateGroup(ui, store, open)} />
       </div>
 
-      <div className="cha-about">ChamaOne · built for Kenyan Chamas · v1.0</div>
+      <div className="cha-about">ChamaOne · built for Kenyan Chamas · v{__APP_VERSION__}</div>
     </>
   );
 }
