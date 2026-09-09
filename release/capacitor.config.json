@@ -1,0 +1,27 @@
+{
+	"appId": "com.chamaone.app",
+	"appName": "ChamaOne",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	},
+	"backgroundColor": "#0F172A",
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 1400,
+			"launchAutoHide": false,
+			"backgroundColor": "#0F172A",
+			"showSpinner": false,
+			"androidScaleType": "CENTER_CROP",
+			"splashFullScreen": true,
+			"splashImmersive": true
+		},
+		"Keyboard": {
+			"resize": "native"
+		},
+		"StatusBar": {
+			"style": "LIGHT",
+			"overlaysWebView": true
+		}
+	}
+}
