@@ -73,7 +73,17 @@ export function MemberDetail({ store, params, back }) {
         {contribs.length === 0 && <div className="cha-muted cha-small">None yet.</div>}
       </div>
 
-      {store.canManageMembers() && (
+      {store.myRole() === 'Chairperson' && m.id !== store.myMemberId() && (
+        <div className="cha-card">
+          <div className="cha-sec" style={{ margin: '0 0 8px' }}><h5>Role</h5></div>
+          <select className="cha-select" value={m.role} onChange={(e) => { store.setMemberRole(m.id, e.target.value); toast(`${m.name} is now the ${e.target.value}`); }}>
+            <option>Chairperson</option><option>Treasurer</option><option>Secretary</option><option>Member</option>
+          </select>
+          <p className="cha-muted cha-small" style={{ marginBottom: 0 }}>Treasurer records money · Secretary runs meetings · Chairperson can do both and manage the group.</p>
+        </div>
+      )}
+
+      {store.canManageMembers() && m.id !== store.myMemberId() && (
         <button className="cha-btn cha-btn-danger" onClick={() =>
           confirm('Remove member?', `${m.name} will be removed from the group.`, () => { store.removeMember(m.id); toast('Member removed'); back(); })}>
           Remove from group

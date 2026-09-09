@@ -192,6 +192,7 @@ export async function createGroupRemote(g, userId) {
 export const db = {
   addMember: (groupId, m) => ins('group_members', memberToRow(groupId, m)),
   setMemberStatus: (memberId, status) => upd('group_members', memberId, { status }),
+  setMemberRole: (memberId, role) => upd('group_members', memberId, { role }),
 
   addContribution: (groupId, c, recordedBy) => ins('contributions', contribToRow(groupId, c, recordedBy)),
   addLedger: (groupId, e) => ins('ledger', ledgerToRow(groupId, e)),

@@ -121,7 +121,7 @@ export async function hydrate(user) {
 
 // The caller's own membership id in the active group — used so votes satisfy
 // the "cast only your own vote" RLS policy (falls back to the first member).
-function myMemberId() {
+export function myMemberId() {
   const ms = members();
   const mine = currentUser ? ms.find((m) => m.userId === currentUser.id) : null;
   return (mine || ms[0])?.id;
@@ -351,6 +351,14 @@ export function removeMember(id) {
   emit();
   if (REMOTE) mirror(db.setMemberStatus(id, 'removed'));
 }
+export function setMemberRole(id, role) {
+  const m = memberById(id);
+  if (!m || m.role === role) return;
+  m.role = role;
+  notify('member', `${m.name} is now the ${role}.`);
+  emit();
+  if (REMOTE) mirror(db.setMemberRole(id, role));
+}
 
 /* ---------- contributions ---------- */
 export function recordContribution({ memberId, amount, method, ref, cycleId }) {
@@ -567,14 +575,14 @@ export function wipe() {
 const actions = {
   createGroup, joinGroup, listGroups, groupCount, switchGroup, deleteGroup,
   startNextCycle, updateGroup, updateSettings,
-  addMember, removeMember,
+  addMember, removeMember, setMemberRole,
   recordContribution, contributionsForCycle, memberCycleTotal, cycleStats, memberStatus, cycleLabel,
   applyLoan, loanById, voteLoan, loanTotals, disburseLoan, repayLoan,
   createMeeting, makeMeetingLink, meetingById, addMotion, voteMotion, closeMotion, saveMinutes,
   poolBalance, financialSummary, contributionTrend, toCSV,
   notify: (t, x) => { notify(t, x); emit(); }, unreadCount, markAllRead, markRead,
   members, memberById, activeCycle, displayPhone, normalizePhone,
-  myRole, canManageMoney, canManageMeetings, canManageMembers,
+  myRole, myMemberId, canManageMoney, canManageMeetings, canManageMembers,
   reset, wipe,
 };
 
