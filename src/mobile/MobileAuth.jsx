@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { User, Lock, Mail, Eye, EyeOff, ArrowRight, ShieldAlert, MailCheck } from 'lucide-react';
+import { User, Lock, Mail, Phone, Eye, EyeOff, ArrowRight, ShieldAlert, MailCheck } from 'lucide-react';
 import { Logo } from '../App';
 import { signUp, signIn, authMode } from '../lib/account';
+import { normalizePhone } from '../store/chama';
 import './mobile.css';
 
 // The account gate. Email + password via Supabase Auth (or the device-local
@@ -9,6 +10,7 @@ import './mobile.css';
 export default function MobileAuth({ onAuthed }) {
   const [mode, setMode] = useState('login');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -28,7 +30,7 @@ export default function MobileAuth({ onAuthed }) {
       if (!local && !name.trim()) { setError('Enter your name.'); return; }
       if (password !== confirm) { setError('Passwords do not match.'); return; }
       setBusy(true);
-      const r = await signUp({ name, email, password });
+      const r = await signUp({ name, phone: normalizePhone(phone), email, password });
       setBusy(false);
       if (!r.ok) { setError(r.error); return; }
       if (r.needsConfirmation) {
@@ -73,6 +75,16 @@ export default function MobileAuth({ onAuthed }) {
               <div className="cha-authin">
                 <User size={18} />
                 <input placeholder="e.g. Grace Wanjiru" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+            </label>
+          )}
+
+          {mode === 'signup' && !local && (
+            <label className="cha-field"><span>Phone (optional)</span>
+              <div className="cha-authin">
+                <Phone size={18} />
+                <input type="tel" inputMode="tel" placeholder="0712345678 — links you to invites"
+                  value={phone} onChange={(e) => setPhone(e.target.value)} />
               </div>
             </label>
           )}

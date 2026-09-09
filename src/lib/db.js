@@ -89,11 +89,13 @@ const rowToNotif = (r) => ({ id: r.id, type: r.type, text: r.text, read: r.read,
 
 const groupToRow = (g, userId) => ({
   id: g.id, name: g.name, type: g.type, contribution_amount: g.contributionAmount, frequency: g.frequency,
-  currency: g.currency, loan_interest: g.loanInterest, active_cycle_id: g.activeCycleId, created_by: userId,
+  currency: g.currency, loan_interest: g.loanInterest, active_cycle_id: g.activeCycleId,
+  join_code: g.joinCode || null, created_by: userId,
 });
 const rowToGroup = (r) => ({
   id: r.id, name: r.name, type: r.type, contributionAmount: Number(r.contribution_amount), frequency: r.frequency,
-  currency: r.currency, loanInterest: Number(r.loan_interest), activeCycleId: r.active_cycle_id, createdAt: r.created_at,
+  currency: r.currency, loanInterest: Number(r.loan_interest), activeCycleId: r.active_cycle_id,
+  joinCode: r.join_code || '', createdAt: r.created_at,
 });
 
 /* ---------- read: which groups am I in ---------- */
@@ -216,6 +218,36 @@ export const db = {
 
   deleteGroup: (groupId) => del('groups', groupId),  // cascades to all child rows
 };
+
+/* ---------- join a group by code (SECURITY DEFINER RPC) ---------- */
+export async function joinGroupByCode(code) {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const { data, error } = await supabase.rpc('join_group_by_code', { p_code: (code || '').trim() });
+  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, '') };
+  return { ok: true, groupId: data };
+}
+
+/* ---------- realtime: reload the active group when anything changes ---------- */
+// Broad but simple: any change to a table involved in this group triggers the
+// caller's onChange (debounced upstream), which re-pulls the group. RLS means
+// only rows the user can see reach them. Returns an unsubscribe function.
+const RT_TABLES = [
+  'groups', 'group_members', 'cycles', 'contributions', 'loans', 'loan_votes',
+  'loan_repayments', 'meetings', 'motions', 'motion_votes', 'ledger', 'notifications',
+];
+export function subscribeGroup(groupId, onChange) {
+  if (!supabase || !groupId) return () => {};
+  try {
+    const channel = supabase.channel(`group:${groupId}`);
+    RT_TABLES.forEach((table) => {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+        try { onChange(); } catch { /* ignore */ }
+      });
+    });
+    channel.subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch { /* ignore */ } };
+  } catch { return () => {}; }
+}
 
 // snake_case patch helpers for group updates (in-memory patch is camelCase).
 export function groupPatchToRow(patch) {

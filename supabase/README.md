@@ -18,7 +18,9 @@ nothing breaks.
 ## Apply the schema
 
 **Option A — SQL editor (quickest):** open the Supabase dashboard → SQL
-editor, paste the contents of `migrations/0001_init.sql`, run it.
+editor and run each migration in order: first `migrations/0001_init.sql`,
+then `migrations/0002_join_and_realtime.sql` (join codes, the self-join RPC,
+and realtime). If you already ran 0001, just run 0002.
 
 **Option B — Supabase CLI:**
 ```bash

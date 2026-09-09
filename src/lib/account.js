@@ -34,12 +34,12 @@ function friendly(error) {
 }
 
 /** Create an account. Returns { ok, user?, needsConfirmation?, error? }. */
-export async function signUp({ name, email, password }) {
+export async function signUp({ name, email, password, phone }) {
   if (supabase) {
     const { data, error } = await supabase.auth.signUp({
       email: (email || '').trim(),
       password,
-      options: { data: { full_name: (name || '').trim() } },
+      options: { data: { full_name: (name || '').trim(), phone: (phone || '').trim() } },
     });
     if (error) return { ok: false, error: friendly(error) };
     // With email confirmation ON, there is no session until the link is clicked.

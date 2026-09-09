@@ -10,7 +10,7 @@
  * ===================================================================== */
 import { useSyncExternalStore } from 'react';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow } from '../lib/db';
+import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, subscribeGroup } from '../lib/db';
 
 const KEY = 'chamaone.state.v2'; // multi-group container (v1 was single-group)
 const CURRENCY = 'KES';
@@ -41,6 +41,8 @@ const listeners = new Set();
 // UUIDs so client-generated ids are valid Postgres uuids and the optimistic
 // in-memory row shares its id with the persisted row. Falls back to a random
 // v4-shaped string on very old engines without crypto.randomUUID.
+// Short, human-shareable join code (no ambiguous chars).
+const genCode = () => Array.from({ length: 6 }, () => '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 32)]).join('');
 const uid = () => (globalThis.crypto?.randomUUID
   ? crypto.randomUUID()
   : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -66,7 +68,7 @@ function rootFromGroup(g) { return { activeGroupId: g.group.id, groups: { [g.gro
 function blankGroup() {
   const cid = uid();
   return {
-    group: { id: uid(), name: '', type: 'Savings Group', contributionAmount: 0, frequency: 'monthly', currency: CURRENCY, createdAt: now(), activeCycleId: cid, loanInterest: 10 },
+    group: { id: uid(), name: '', type: 'Savings Group', contributionAmount: 0, frequency: 'monthly', currency: CURRENCY, createdAt: now(), activeCycleId: cid, loanInterest: 10, joinCode: '' },
     members: [], cycles: [{ id: cid, label: '', startDate: now(), endDate: now() }],
     contributions: [], loans: [], meetings: [], ledger: [], notifications: [],
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false }, onboarded: false,
@@ -113,6 +115,7 @@ export async function hydrate(user) {
   root = { activeGroupId: Object.keys(states)[0] || null, groups: states };
   state = root.groups[root.activeGroupId] || null;
   version++; listeners.forEach((fn) => fn());
+  startRealtime();
   return Object.keys(states).length;
 }
 
@@ -122,6 +125,53 @@ function myMemberId() {
   const ms = members();
   const mine = currentUser ? ms.find((m) => m.userId === currentUser.id) : null;
   return (mine || ms[0])?.id;
+}
+
+/* ---------- realtime sync ---------- */
+let rtUnsub = null;
+let rtTimer = null;
+// Re-pull the active group after another member changes it (debounced).
+function refreshActiveGroup() {
+  if (!REMOTE || !root?.activeGroupId) return;
+  const id = root.activeGroupId;
+  loadGroupState(id).then((gs) => {
+    if (!gs || root.activeGroupId !== id) return;
+    gs.currentUserId = currentUser?.id;
+    root.groups[id] = gs;
+    state = gs;
+    version++; listeners.forEach((fn) => fn());
+  }).catch(() => { /* ignore */ });
+}
+export function startRealtime() {
+  if (!REMOTE) return;
+  stopRealtime();
+  if (!root?.activeGroupId) return;
+  rtUnsub = subscribeGroup(root.activeGroupId, () => {
+    clearTimeout(rtTimer);
+    rtTimer = setTimeout(refreshActiveGroup, 400);
+  });
+}
+export function stopRealtime() {
+  try { rtUnsub && rtUnsub(); } catch { /* ignore */ }
+  rtUnsub = null;
+  clearTimeout(rtTimer);
+}
+
+/* ---------- join a group by code ---------- */
+export async function joinGroup(code) {
+  if (!REMOTE) return { ok: false, error: 'Joining a group needs the online backend.' };
+  const res = await joinGroupByCode(code);
+  if (!res.ok) return res;
+  const gs = await loadGroupState(res.groupId);
+  if (!gs) return { ok: false, error: 'Joined, but could not load the group.' };
+  gs.currentUserId = currentUser?.id;
+  ensure();
+  root.groups[res.groupId] = gs;
+  root.activeGroupId = res.groupId;
+  state = gs;
+  emit();
+  startRealtime();
+  return { ok: true, name: gs.group.name };
 }
 
 /* ---------- multiple groups ---------- */
@@ -137,7 +187,7 @@ export function listGroups() {
 export function groupCount() { ensure(); return Object.keys(root.groups).length; }
 export function switchGroup(id) {
   ensure();
-  if (root.groups[id]) { root.activeGroupId = id; state = root.groups[id]; emit(); }
+  if (root.groups[id]) { root.activeGroupId = id; state = root.groups[id]; emit(); if (REMOTE) startRealtime(); }
 }
 export function deleteGroup(id) {
   ensure();
@@ -151,6 +201,7 @@ export function deleteGroup(id) {
     state = root.groups[root.activeGroupId];
   }
   emit();
+  if (REMOTE) startRealtime();
 }
 
 /* ---------- getters ---------- */
@@ -216,7 +267,7 @@ function buildGroup({ name, type, amount, frequency, members: mem }) {
     group: {
       id: uid('grp'), name, type: type || 'Savings Group',
       contributionAmount: Number(amount) || 0, frequency: frequency || 'monthly',
-      currency: CURRENCY, createdAt: now(), activeCycleId: cycleId, loanInterest: 10,
+      currency: CURRENCY, createdAt: now(), activeCycleId: cycleId, loanInterest: 10, joinCode: genCode(),
     },
     members: (mem || []).map((m, i) => ({
       id: uid('mb'), name: m.name, phone: normalizePhone(m.phone),
@@ -240,7 +291,7 @@ export function createGroup({ name, type, amount, frequency, members: mem }) {
   state = g;
   notify('system', `Welcome to ChamaOne! "${name}" is ready.`);
   emit();
-  if (REMOTE && currentUser) mirror(createGroupRemote(g, currentUser.id));
+  if (REMOTE && currentUser) { mirror(createGroupRemote(g, currentUser.id)); startRealtime(); }
 }
 function makeCycle(id, frequency) {
   const start = new Date();
@@ -500,7 +551,7 @@ export function wipe() {
  * EduOne's `store` prop shape. Re-renders subscribers on every emit().
  * ===================================================================== */
 const actions = {
-  createGroup, listGroups, groupCount, switchGroup, deleteGroup,
+  createGroup, joinGroup, listGroups, groupCount, switchGroup, deleteGroup,
   startNextCycle, updateGroup, updateSettings,
   addMember, removeMember,
   recordContribution, contributionsForCycle, memberCycleTotal, cycleStats, memberStatus, cycleLabel,
@@ -531,7 +582,7 @@ export function useChama() {
  * ===================================================================== */
 function seedGroup() {
   const s = {
-    group: { id: uid('grp'), name: 'Umoja Investment Chama', type: 'Investment Club', contributionAmount: 2000, frequency: 'monthly', currency: CURRENCY, createdAt: monthsAgo(4), activeCycleId: null, loanInterest: 10 },
+    group: { id: uid('grp'), name: 'Umoja Investment Chama', type: 'Investment Club', contributionAmount: 2000, frequency: 'monthly', currency: CURRENCY, createdAt: monthsAgo(4), activeCycleId: null, loanInterest: 10, joinCode: genCode() },
     members: [
       mk('Grace Wanjiru', '0722100200', 'Chairperson', 4),
       mk('James Otieno', '0733200300', 'Treasurer', 4),

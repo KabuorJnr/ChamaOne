@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import MobileShell from './mobile/MobileShell';
 import MobileAuth from './mobile/MobileAuth';
 import MobileOnboard from './mobile/MobileOnboard';
-import { useChama, setNotifSink, getState, hydrate, setCurrentUser } from './store/chama';
+import { useChama, setNotifSink, getState, hydrate, setCurrentUser, stopRealtime } from './store/chama';
 import { notify as deviceNotify } from './lib/notifications';
 import { currentUser, onAuthChange, signOut } from './lib/account';
 import './mobile/mobile.css';
@@ -57,7 +57,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
-  const onLogout = () => { signOut(); setAccount(null); };
+  const onLogout = () => { stopRealtime(); signOut(); setAccount(null); };
   const user = { name: account?.name || 'Member', role: 'chairperson', onLogout };
 
   // Hold the splash until the branded delay AND the session check are both done,

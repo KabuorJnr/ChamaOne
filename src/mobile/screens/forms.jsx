@@ -4,6 +4,7 @@ import { useUI, fmtKES, StkIcon } from './kit';
 import { requestPayment } from '../../lib/mpesa';
 import { scheduleAt } from '../../lib/notifications';
 import { changePassword } from '../../lib/account';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 /* ---- open helpers (call from any screen with the UI ctx) ---- */
 export const openCollect = (ui, store, memberId) =>
@@ -255,9 +256,11 @@ export const openGroupSwitcher = (ui, store, open) =>
 
 function GroupSwitcher({ store, close, open, ui }) {
   const groups = store.listGroups();
+  const code = store.group?.joinCode;
+  const copy = () => { try { navigator.clipboard?.writeText(code); ui.toast('Invite code copied'); } catch { ui.toast(code); } };
   return (
     <>
-      <p className="cha-muted cha-small" style={{ marginTop: 0 }}>Switch between the Chamas you run, or add another.</p>
+      <p className="cha-muted cha-small" style={{ marginTop: 0 }}>Switch between your Chamas, invite members, or join one.</p>
       <div className="cha-list-card" style={{ marginBottom: 12 }}>
         {groups.map((g) => (
           <button className="cha-li" key={g.id} onClick={() => { store.switchGroup(g.id); close(); open && open('home'); ui.toast(`Switched to ${g.name}`); }}>
@@ -267,10 +270,42 @@ function GroupSwitcher({ store, close, open, ui }) {
           </button>
         ))}
       </div>
+
+      {isSupabaseConfigured && code && (
+        <div className="cha-card" style={{ marginBottom: 12 }}>
+          <p className="cha-muted cha-small" style={{ marginTop: 0 }}>Invite members to <b>{store.group.name}</b> — share this code:</p>
+          <button className="cha-btn cha-btn-ghost" onClick={copy} style={{ fontFamily: 'monospace', letterSpacing: 3, fontSize: 20 }}>{code}</button>
+        </div>
+      )}
+
       <button className="cha-btn" onClick={() => { close(); openCreateGroup(ui, store, open); }}>+ Create a new Chama</button>
+      {isSupabaseConfigured && <JoinBox store={store} close={close} open={open} ui={ui} />}
     </>
   );
 }
+function JoinBox({ store, close, open, ui }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const join = async () => {
+    if (!code.trim()) return ui.toast('Enter an invite code');
+    setBusy(true);
+    const r = await store.joinGroup(code.trim());
+    setBusy(false);
+    if (!r.ok) return ui.toast(r.error || 'Could not join');
+    close(); open && open('home'); ui.toast(`Joined ${r.name}`);
+  };
+  return (
+    <div style={{ marginTop: 14 }}>
+      <p className="cha-muted cha-small">Have an invite code? Join a Chama:</p>
+      <div className="cha-grid2" style={{ gridTemplateColumns: '1fr auto', gap: 8 }}>
+        <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="e.g. 7QK2M9" style={{ fontFamily: 'monospace', letterSpacing: 2 }} maxLength={8} />
+        <button className="cha-btn cha-btn-sm" onClick={join} disabled={busy} style={{ whiteSpace: 'nowrap' }}>{busy ? '…' : 'Join'}</button>
+      </div>
+    </div>
+  );
+}
+
 function initials(name = '') {
   const p = String(name).trim().split(/\s+/);
   return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || 'CH';
