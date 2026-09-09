@@ -10,7 +10,7 @@
  * ===================================================================== */
 import { useSyncExternalStore } from 'react';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, subscribeGroup } from '../lib/db';
+import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment } from '../lib/db';
 
 const KEY = 'chamaone.state.v2'; // multi-group container (v1 was single-group)
 const CURRENCY = 'KES';
@@ -70,7 +70,7 @@ function blankGroup() {
   return {
     group: { id: uid(), name: '', type: 'Savings Group', contributionAmount: 0, frequency: 'monthly', currency: CURRENCY, createdAt: now(), activeCycleId: cid, loanInterest: 10, joinCode: '' },
     members: [], cycles: [{ id: cid, label: '', startDate: now(), endDate: now() }],
-    contributions: [], loans: [], meetings: [], ledger: [], notifications: [],
+    contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false }, onboarded: false,
   };
 }
@@ -288,7 +288,7 @@ function buildGroup({ name, type, amount, frequency, members: mem }) {
       role: i === 0 ? 'Chairperson' : m.role || 'Member', joinedAt: now(), status: 'active',
     })),
     cycles: [makeCycle(cycleId, frequency)],
-    contributions: [], loans: [], meetings: [], ledger: [], notifications: [],
+    contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false },
     onboarded: true,
   };
@@ -403,6 +403,45 @@ export function memberStatus(memberId, cycleId) {
   if (paid >= target) return { paid, target, state: 'paid' };
   if (paid > 0) return { paid, target, state: 'partial' };
   return { paid, target, state: 'unpaid' };
+}
+
+/* ---------- payments (report → officer confirms → contribution) ---------- */
+export const pendingPayments = () => (ensure().payments || []).filter((p) => p.status === 'pending');
+
+// A member reports a payment they've made — awaiting officer confirmation.
+export function reportPayment({ amount, providerRef, note }) {
+  ensure();
+  const meId = myMemberId();
+  const me = memberById(meId);
+  const p = { id: uid(), memberId: meId, amount: Number(amount), phone: me?.phone || '', provider: 'manual', providerRef: providerRef || '', status: 'pending', note: note || '', createdAt: now() };
+  state.payments = state.payments || [];
+  state.payments.unshift(p);
+  notify('money', `${me ? me.name : 'A member'} reported a ${fmtKES(p.amount)} payment — awaiting confirmation.`);
+  emit();
+  if (REMOTE) mirror(db.addPayment(state.group.id, p, recorder()));
+  return p;
+}
+
+// Officer confirms a reported payment → creates the contribution + ledger row.
+export async function confirmPayment(paymentId, memberId, cycleId) {
+  if (!REMOTE) {
+    const p = (ensure().payments || []).find((x) => x.id === paymentId);
+    if (p) { p.status = 'confirmed'; recordContribution({ memberId, amount: p.amount, method: 'mpesa', ref: p.providerRef, cycleId }); }
+    return { ok: true };
+  }
+  const res = await dbConfirmPayment(paymentId, memberId, cycleId);
+  if (res.ok) refreshActiveGroup();
+  return res;
+}
+export async function rejectPayment(paymentId) {
+  if (!REMOTE) {
+    const p = (ensure().payments || []).find((x) => x.id === paymentId);
+    if (p) { p.status = 'rejected'; emit(); }
+    return { ok: true };
+  }
+  const res = await dbRejectPayment(paymentId);
+  if (res.ok) refreshActiveGroup();
+  return res;
 }
 
 /* ---------- loans ---------- */
@@ -577,6 +616,7 @@ const actions = {
   startNextCycle, updateGroup, updateSettings,
   addMember, removeMember, setMemberRole,
   recordContribution, contributionsForCycle, memberCycleTotal, cycleStats, memberStatus, cycleLabel,
+  pendingPayments, reportPayment, confirmPayment, rejectPayment,
   applyLoan, loanById, voteLoan, loanTotals, disburseLoan, repayLoan,
   createMeeting, makeMeetingLink, meetingById, addMotion, voteMotion, closeMotion, saveMinutes,
   poolBalance, financialSummary, contributionTrend, toCSV,
@@ -615,7 +655,7 @@ function seedGroup() {
       mk('David Mwangi', '0790600700', 'Member', 2),
       mk('Aisha Hassan', '0712700800', 'Member', 1),
     ],
-    cycles: [], contributions: [], loans: [], meetings: [], ledger: [], notifications: [],
+    cycles: [], contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false }, onboarded: true,
   };
   const cids = [];

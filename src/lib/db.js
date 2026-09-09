@@ -87,6 +87,12 @@ const rowToLedger = (r) => ({ id: r.id, type: r.type, amount: Number(r.amount), 
 const notifToRow = (groupId, n) => ({ id: n.id, group_id: groupId, user_id: n.userId || null, type: n.type, text: n.text, read: n.read, date: n.date });
 const rowToNotif = (r) => ({ id: r.id, type: r.type, text: r.text, read: r.read, date: r.date });
 
+const rowToPayment = (r) => ({
+  id: r.id, memberId: r.member_id, amount: Number(r.amount), phone: r.phone || '',
+  provider: r.provider, providerRef: r.provider_ref || '', status: r.status, note: r.note || '',
+  reportedBy: r.reported_by, createdAt: r.created_at,
+});
+
 const groupToRow = (g, userId) => ({
   id: g.id, name: g.name, type: g.type, contribution_amount: g.contributionAmount, frequency: g.frequency,
   currency: g.currency, loan_interest: g.loanInterest, active_cycle_id: g.activeCycleId,
@@ -114,7 +120,7 @@ export async function fetchGroups(userId) {
 /* ---------- read: assemble one group's full state ---------- */
 export async function loadGroupState(groupId) {
   if (!supabase) return null;
-  const [g, members, cycles, contributions, loans, loanVotes, repayments, meetings, motions, motionVotes, ledger, notifications] =
+  const [g, members, cycles, contributions, loans, loanVotes, repayments, meetings, motions, motionVotes, ledger, notifications, paymentsRes] =
     await Promise.all([
       supabase.from('groups').select('*').eq('id', groupId).single(),
       supabase.from('group_members').select('*').eq('group_id', groupId),
@@ -128,6 +134,7 @@ export async function loadGroupState(groupId) {
       supabase.from('motion_votes').select('*'),
       supabase.from('ledger').select('*').eq('group_id', groupId).order('date', { ascending: false }),
       supabase.from('notifications').select('*').eq('group_id', groupId).order('date', { ascending: false }),
+      supabase.from('payments').select('*').eq('group_id', groupId).order('created_at', { ascending: false }),
     ]);
   if (g.error) { console.error('[db] loadGroupState', g.error.message); return null; }
 
@@ -168,6 +175,7 @@ export async function loadGroupState(groupId) {
       .sort((a, b) => new Date(b.date) - new Date(a.date)),
     ledger: (ledger.data || []).map(rowToLedger),
     notifications: (notifications.data || []).map(rowToNotif),
+    payments: (paymentsRes?.data || []).map(rowToPayment),
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false },
     onboarded: true,
   };
@@ -217,8 +225,28 @@ export const db = {
   addNotification: (groupId, n) => ins('notifications', notifToRow(groupId, n)),
   setNotificationRead: (id, read) => upd('notifications', id, { read }),
 
+  addPayment: (groupId, p, reportedBy) => ins('payments', {
+    id: p.id, group_id: groupId, member_id: p.memberId || null, amount: p.amount,
+    phone: p.phone || '', provider: p.provider || 'manual', provider_ref: p.providerRef || '',
+    status: 'pending', note: p.note || '', reported_by: reportedBy || null,
+  }),
+
   deleteGroup: (groupId) => del('groups', groupId),  // cascades to all child rows
 };
+
+// Confirm/reject go through SECURITY DEFINER RPCs (officer-gated, atomic).
+export async function confirmPayment(paymentId, memberId, cycleId) {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const { data, error } = await supabase.rpc('confirm_payment', { p_payment_id: paymentId, p_member_id: memberId, p_cycle_id: cycleId });
+  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, '') };
+  return { ok: true, contributionId: data };
+}
+export async function rejectPayment(paymentId, note = '') {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const { error } = await supabase.rpc('reject_payment', { p_payment_id: paymentId, p_note: note });
+  if (error) return { ok: false, error: error.message.replace(/^.*?:\s*/, '') };
+  return { ok: true };
+}
 
 /* ---------- join a group by code (SECURITY DEFINER RPC) ---------- */
 export async function joinGroupByCode(code) {
@@ -234,7 +262,7 @@ export async function joinGroupByCode(code) {
 // only rows the user can see reach them. Returns an unsubscribe function.
 const RT_TABLES = [
   'groups', 'group_members', 'cycles', 'contributions', 'loans', 'loan_votes',
-  'loan_repayments', 'meetings', 'motions', 'motion_votes', 'ledger', 'notifications',
+  'loan_repayments', 'meetings', 'motions', 'motion_votes', 'ledger', 'notifications', 'payments',
 ];
 export function subscribeGroup(groupId, onChange) {
   if (!supabase || !groupId) return () => {};

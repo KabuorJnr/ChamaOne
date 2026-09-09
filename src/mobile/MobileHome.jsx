@@ -32,6 +32,7 @@ export default function MobileHome({ store, open }) {
 
   const groupCount = store.groupCount();
   const canMoney = store.canManageMoney();
+  const pendingPays = store.pendingPayments();
 
   return (
     <>
@@ -79,6 +80,17 @@ export default function MobileHome({ store, open }) {
         <Kpi icon={CreditCard} color={GOOD} value={fmtKES(fin.outstandingLoans)} label={`${fin.loanCount} active loan${fin.loanCount === 1 ? '' : 's'}`} />
         <Kpi icon={Users} color={BLUE} value={fin.memberCount} label={`${store.group.frequency} · ${fmtKES(store.group.contributionAmount)}`} />
       </div>
+
+      {/* payments to confirm */}
+      {canMoney && pendingPays.length > 0 && (
+        <button className="cha-card cha-attn" style={{ width: '100%', textAlign: 'left', cursor: 'pointer' }} onClick={() => open('collections')}>
+          <SecHead title="Payments to confirm" />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+            <span className="cha-muted cha-small">{pendingPays.length} payment{pendingPays.length === 1 ? '' : 's'} awaiting your confirmation</span>
+            <b className="cha-num">{fmtKES(pendingPays.reduce((t, p) => t + p.amount, 0))}</b>
+          </div>
+        </button>
+      )}
 
       {/* needs a vote */}
       {pending.length > 0 && (
