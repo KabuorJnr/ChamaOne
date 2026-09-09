@@ -365,3 +365,48 @@ html.platform-android .cha-m { --safe-top: max(env(safe-area-inset-top, 0px), 26
 .cha-m, .cha-scroll { overflow-x: hidden; max-width: 100vw; }
 
 @media (prefers-reduced-motion: reduce) { .cha-ribbon { animation: none !important; } }
+
+/* ============================================================================
+   UI polish — more whitespace, lighter type, and keep clear of the status bar.
+   ========================================================================== */
+
+/* Never draw under the phone status bar (battery, clock, notifications).
+   Native (Capacitor) now reserves that strip itself, so no extra inset there;
+   an installed PWA reserves a small top strip. */
+html.platform-android .cha-m { --safe-top: env(safe-area-inset-top, 0px); }
+@media (display-mode: standalone) { .cha-m { --safe-top: max(env(safe-area-inset-top, 0px), 22px); } }
+
+/* Roomier layout */
+.cha-scroll { padding-left: 18px; padding-right: 18px; padding-top: calc(16px + var(--safe-top)); gap: 18px; }
+.cha-card { padding: 20px; border-radius: 22px; }
+.cha-hero-card { padding: 20px 22px; }
+.cha-list-card, .cha-kpi, .cha-qa { border-radius: 20px; }
+.cha-li { padding: 15px 16px; }
+.cha-mini-grid { gap: 12px; }
+.cha-qa-grid { gap: 11px; }
+.cha-sec { margin: 5px 2px 0; }
+.cha-auth-sheet { padding: 26px 22px calc(26px + var(--safe-bottom)); gap: 13px; }
+
+/* Calmer, smaller type */
+.cha-brand { font-size: 24px; }
+.cha-auth-brand { font-size: 22px; }
+.cha-auth-head h3 { font-size: 20px; }
+.cha-auth-head p { font-size: 13px; }
+.cha-hero-amt { font-size: 31px; }
+.cha-hero-lb { font-size: 12px; }
+.cha-sec h5 { font-size: 14px; }
+.cha-schead h2 { font-size: 18px; }
+.cha-cycle-big { font-size: 17px; }
+.cha-cycle-title { font-size: 13.5px; }
+.cha-ring-pct { font-size: 21px; }
+.cha-kpi .cha-v { font-size: 20px; }
+.cha-top .cha-nm { font-size: 16px; }
+.cha-mp-name { font-size: 16px; }
+.cha-li .cha-lt b, .cha-loan-head .cha-main b { font-size: 13px; }
+.cha-li .cha-lt span { font-size: 11.5px; }
+.cha-btn { height: 48px; font-size: 14.5px; }
+.cha-btn-sm { height: 40px; font-size: 13px; }
+.cha-input, .cha-select, .cha-textarea { font-size: 14px; padding: 11px 12px; }
+.cha-authin { height: 48px; }
+.cha-authin input { font-size: 14px; }
+.cha-sheet-h h3 { font-size: 17px; }
