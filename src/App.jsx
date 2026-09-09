@@ -2,10 +2,19 @@ import { useState, useEffect } from 'react';
 import MobileShell from './mobile/MobileShell';
 import MobileAuth from './mobile/MobileAuth';
 import MobileOnboard from './mobile/MobileOnboard';
+import MobileLanding from './mobile/MobileLanding';
 import { useChama, setNotifSink, getState, hydrate, setCurrentUser, stopRealtime } from './store/chama';
 import { notify as deviceNotify } from './lib/notifications';
 import { currentUser, onAuthChange, signOut } from './lib/account';
+import { isNative } from './lib/native';
 import './mobile/mobile.css';
+
+// Installed PWA / native app → straight into the app; a plain browser tab →
+// show the public landing (download + install) first.
+const isInstalledApp = () => {
+  try { if (isNative()) return true; } catch { /* ignore */ }
+  try { return window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone || false; } catch { return false; }
+};
 
 // Mirror important in-app notifications to the phone's notification tray —
 // but only money/loan/meeting/cycle events, and only when the user has turned
@@ -29,6 +38,7 @@ export default function App() {
   const [account, setAccount] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [entered, setEntered] = useState(isInstalledApp()); // installed app skips the landing
 
   // Resolve the current session on cold start, then keep it in sync with
   // Supabase auth changes (sign-in/out/token refresh across devices).
@@ -64,8 +74,12 @@ export default function App() {
   // so a signed-in user never flashes the login screen.
   if (splash || !authReady) return <Splash />;
 
-  // Gate the app behind the account login until signed in.
-  if (!account) return <MobileAuth onAuthed={(u) => setAccount(u)} />;
+  // Logged out: a browser visitor sees the public landing first; "Open in
+  // browser" (or an installed app) proceeds to the login gate.
+  if (!account) {
+    if (!entered) return <MobileLanding onEnter={() => setEntered(true)} />;
+    return <MobileAuth onAuthed={(u) => setAccount(u)} />;
+  }
 
   // Signed in — wait for the backend load, then onboard or run the app.
   if (!hydrated) return <Splash />;
