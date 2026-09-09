@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F172A" />
+  <title>Get ChamaOne</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(120% 90% at 50% -10%, #1E3A8A 0%, #0F172A 55%); color: #E2E8F0;
+      min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { width: 100%; max-width: 420px; text-align: center; }
+    .logo { width: 96px; height: 96px; margin: 0 auto 18px; display: block; }
+    h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.02em; }
+    .tag { color: #94A3B8; margin: 0 0 26px; font-size: 15px; line-height: 1.5; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+      padding: 15px 18px; border-radius: 14px; border: 0; font-size: 16px; font-weight: 700;
+      cursor: pointer; text-decoration: none; margin-bottom: 12px; }
+    .primary { background: #2563EB; color: #fff; }
+    .primary:active { background: #1D4ED8; }
+    .ghost { background: rgba(255,255,255,.06); color: #E2E8F0; border: 1px solid rgba(255,255,255,.12); }
+    .hint { font-size: 13px; color: #64748B; margin-top: 8px; line-height: 1.5; }
+    .steps { text-align: left; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding: 14px 16px; margin: 18px 0 0; font-size: 14px; color: #CBD5E1; }
+    .steps b { color: #fff; }
+    .steps ol { margin: 8px 0 0; padding-left: 20px; } .steps li { margin: 4px 0; }
+    .badge { display: inline-block; font-size: 11px; color: #93C5FD; background: rgba(96,165,250,.12);
+      padding: 3px 9px; border-radius: 999px; margin-bottom: 16px; letter-spacing: .04em; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">EARLY ACCESS</span>
+    <svg class="logo" viewBox="0 0 512 512" aria-label="ChamaOne">
+      <g fill="none" stroke-linecap="round">
+        <circle cx="256" cy="150" r="46" fill="#60A5FA"/>
+        <circle cx="150" cy="336" r="46" fill="#60A5FA"/>
+        <circle cx="362" cy="336" r="46" fill="#60A5FA"/>
+        <path d="M256 150 L150 336 L362 336 Z" stroke="#ffffff" stroke-opacity="0.92" stroke-width="24"/>
+      </g>
+      <circle cx="256" cy="286" r="42" fill="#ffffff"/>
+    </svg>
+    <h1>Get ChamaOne</h1>
+    <p class="tag">Run your Chama with confidence — contributions, loans, meetings and books everyone can trust.</p>
+
+    <!-- Primary: install as an app (PWA) -->
+    <button id="install" class="btn primary" hidden>⬇️ Install app</button>
+    <a id="open" class="btn primary" href="/">Open ChamaOne</a>
+    <a class="btn ghost" href="/ChamaOne.apk" download>Download Android APK</a>
+
+    <div id="ios-steps" class="steps" hidden>
+      <b>Install on iPhone/iPad</b>
+      <ol><li>Tap the <b>Share</b> icon in Safari.</li><li>Choose <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>.</li></ol>
+    </div>
+    <div id="manual-steps" class="steps" hidden>
+      <b>Add to your home screen</b>
+      <ol><li>Open the browser <b>menu</b> (⋮).</li><li>Tap <b>Install app</b> / <b>Add to Home screen</b>.</li></ol>
+    </div>
+
+    <p class="hint">Installing gives you a home-screen icon and full-screen app — and it updates itself automatically. The APK is a fallback for phones that prefer a native install.</p>
+  </div>
+
+  <script>
+    // Capture the PWA install prompt and wire the Install button.
+    let deferred = null;
+    const installBtn = document.getElementById('install');
+    const manualSteps = document.getElementById('manual-steps');
+    const iosSteps = document.getElementById('ios-steps');
+    const ua = navigator.userAgent || '';
+    const isIOS = /iP(hone|ad|od)/.test(ua);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferred = e;
+      installBtn.hidden = false;
+    });
+    installBtn.addEventListener('click', async () => {
+      if (!deferred) return;
+      deferred.prompt();
+      await deferred.userChoice;
+      deferred = null;
+      installBtn.hidden = true;
+    });
+    window.addEventListener('appinstalled', () => { installBtn.hidden = true; });
+
+    // If the browser won't offer a prompt, show the right manual steps.
+    if (!standalone) {
+      if (isIOS) iosSteps.hidden = false;
+      else setTimeout(() => { if (deferred === null) manualSteps.hidden = false; }, 1200);
+    }
+  </script>
+</body>
+</html>

@@ -11,6 +11,8 @@ ios/
 *.aab
 *.log
 npm-debug.log*
+# ...but the download page needs this one served by the web host
+!public/ChamaOne.apk
 
 # Editor / OS
 .DS_Store
