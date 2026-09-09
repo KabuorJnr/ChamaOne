@@ -12,7 +12,8 @@ import { useSyncExternalStore } from 'react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment } from '../lib/db';
 
-const KEY = 'chamaone.state.v2'; // multi-group container (v1 was single-group)
+// v3 drops any previously-seeded demo data still sitting in localStorage.
+const KEY = 'chamaone.state.v3';
 const CURRENCY = 'KES';
 
 // When a Supabase project is configured the store is backed by the shared
@@ -31,7 +32,7 @@ const recorder = () => currentUser?.id || null;
 // working on one group unchanged. Each group is fully isolated — the tenant key
 // is group.id, which is exactly what a Supabase RLS `group_id` policy will use
 // when this moves to a shared backend for cross-member sync.
-const OLD_KEY = 'chamaone.state.v1';
+const OLD_KEYS = ['chamaone.state.v2', 'chamaone.state.v1']; // legacy (demo-seeded) — discarded
 let root = null;   // { activeGroupId, groups: { [groupId]: groupState } }
 let state = null;  // the active group's state (what the app reads/writes)
 let version = 0;
@@ -62,7 +63,6 @@ function emit() {
   version++; // bump the snapshot so useSyncExternalStore re-renders
   listeners.forEach((fn) => fn());
 }
-function rootFromGroup(g) { return { activeGroupId: g.group.id, groups: { [g.group.id]: g } }; }
 // A minimal empty group so synchronous getters never throw before a real
 // group is hydrated/created (the app gates the shell behind groupCount()).
 function blankGroup() {
@@ -86,13 +86,8 @@ function ensure() {
   }
   // Load the multi-group container.
   try { const raw = localStorage.getItem(KEY); if (raw) root = JSON.parse(raw); } catch { /* ignore */ }
-  // Migrate the old single-group format (v1) into a one-group container.
-  if (!root) {
-    try {
-      const old = localStorage.getItem(OLD_KEY);
-      if (old) { const g = JSON.parse(old); if (g && g.group) root = rootFromGroup(g); }
-    } catch { /* ignore */ }
-  }
+  // Legacy containers held demo/seed data — drop them rather than migrate.
+  try { OLD_KEYS.forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
   // First run — start empty; the chairperson creates their real Chama.
   if (!root || !root.groups) root = { activeGroupId: null, groups: {} };
   if (!root.groups[root.activeGroupId]) root.activeGroupId = Object.keys(root.groups)[0] || null;
@@ -603,7 +598,7 @@ export function reset() {
 }
 export function wipe() {
   if (REMOTE) { hydrate(currentUser); return; }
-  try { localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); } catch { /* ignore */ }
+  try { localStorage.removeItem(KEY); OLD_KEYS.forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
   reset();
 }
 
