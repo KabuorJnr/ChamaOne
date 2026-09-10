@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Coins, Smartphone, Banknote, Download, Clock, Check, X } from 'lucide-react';
+import { Coins, Smartphone, Banknote, Download, Clock, Check, X, PhoneCall } from 'lucide-react';
 import { fmtKES, Avatar, useUI, Empty, downloadText } from './kit';
 import { fmtDate } from '../../store/chama';
 
@@ -44,7 +44,18 @@ export function ContributionsScreen({ store }) {
       </div>
 
       {!canMoney && (
-        <button className="cha-btn cha-btn-sm" onClick={() => openReport(ui, store)}><Smartphone size={15} /> I&apos;ve paid — notify treasurer</button>
+        <div style={{ display: 'flex', gap: 8, margin: '8px 0 12px' }}>
+          <a
+            className="cha-btn cha-btn-sm"
+            href="tel:*334%23"
+            style={{ textDecoration: 'none', flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            <Smartphone size={14} /> Pay via M-Pesa (*334#)
+          </a>
+          <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => openReport(ui, store)}>
+            Notify treasurer
+          </button>
+        </div>
       )}
 
       {canMoney && pending.length > 0 && (
@@ -108,18 +119,38 @@ function openReport(ui, store) {
 function ReportForm({ store, close, ui }) {
   const [amt, setAmt] = useState(String(store.group.contributionAmount || ''));
   const [code, setCode] = useState('');
+  const shortcode = store.settings?.shortcode;
   return (
     <>
-      <p className="cha-muted cha-small" style={{ marginTop: 0 }}>Already paid the group? Enter the amount and your M-Pesa code — a treasurer will confirm it into your record.</p>
-      <label className="cha-field"><span>Amount (KES)</span>
-        <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
-      <label className="cha-field"><span>M-Pesa code (optional)</span>
-        <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. RGH12ABC" /></label>
-      <button className="cha-btn" onClick={() => {
-        if (!Number(amt)) return ui.toast('Enter an amount');
-        store.reportPayment({ amount: amt, providerRef: code });
-        close(); ui.toast('Reported — a treasurer will confirm it');
-      }}>Submit</button>
+      <div className="cha-card" style={{ background: 'var(--blue-50)', borderColor: 'var(--blue-100)', marginTop: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)' }}>Step 1: Pay to Chama via M-Pesa</div>
+        <p className="cha-muted cha-small" style={{ margin: '4px 0 10px' }}>
+          Dial <b>*334#</b> on your phone to send payment {shortcode ? `to ${shortcode}` : 'to the Chama'}.
+        </p>
+        <a
+          className="cha-btn cha-btn-sm"
+          href="tel:*334%23"
+          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        >
+          <PhoneCall size={14} /> Dial *334# now
+        </a>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)', marginBottom: 4 }}>Step 2: Notify Treasurer to Record</div>
+        <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
+          After paying, enter your M-Pesa transaction code so the treasurer can verify and record it.
+        </p>
+        <label className="cha-field"><span>Amount (KES)</span>
+          <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
+        <label className="cha-field"><span>M-Pesa confirmation code</span>
+          <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. RGH12ABC" /></label>
+        <button className="cha-btn" onClick={() => {
+          if (!Number(amt)) return ui.toast('Enter an amount');
+          store.reportPayment({ amount: amt, providerRef: code });
+          close(); ui.toast('Reported — the treasurer will confirm and record it');
+        }}>Notify Treasurer</button>
+      </div>
     </>
   );
 }

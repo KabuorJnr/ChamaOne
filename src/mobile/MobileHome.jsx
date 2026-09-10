@@ -1,8 +1,8 @@
 import {
-  Plus, CreditCard, Users, Megaphone, ArrowRight, TrendingUp, Vote, ArrowUp, ArrowDown, Video, ChevronsUpDown,
+  Plus, CreditCard, Users, Megaphone, ArrowRight, TrendingUp, Vote, ArrowUp, ArrowDown, Video, ChevronsUpDown, PhoneCall, Smartphone,
 } from 'lucide-react';
 import { fmtKES, Ring, BarChart, SecHead, Avatar, useUI, VoteTag } from './screens/kit';
-import { openCollect, openGroupSwitcher } from './screens/forms';
+import { openCollect, openGroupSwitcher, openReportPayment } from './screens/forms';
 import { remindUnpaid } from './screens/actions';
 
 const BLUE = '#2563EB', GOOD = '#16A34A', WARN = '#D97706', VIOLET = '#7C3AED';
@@ -67,10 +67,26 @@ export default function MobileHome({ store, open }) {
             <div className="cha-cycle-big cha-num">{fmtKES(stats.collected)} <span>/ {fmtKES(stats.expected)}</span></div>
             <div className="cha-cycle-sub">{stats.paidCount} of {stats.totalMembers} members paid in full</div>
             <div className="cha-chips">
-              <button className="cha-chip2" onClick={() => { const n = remindUnpaid(store); ui.toast(n ? `Reminders sent to ${n} members` : 'Everyone has paid'); }}><Megaphone size={13} /> Remind unpaid</button>
+              {canMoney && (
+                <button className="cha-chip2" onClick={() => { const n = remindUnpaid(store); ui.toast(n ? `Reminders sent to ${n} members` : 'Everyone has paid'); }}><Megaphone size={13} /> Remind unpaid</button>
+              )}
               <button className="cha-chip2" onClick={() => open('collections')}>Collections</button>
               <button className="cha-chip2" onClick={() => open('members')}>Members</button>
             </div>
+            {!canMoney && (
+              <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+                <a
+                  className="cha-btn cha-btn-sm"
+                  href="tel:*334%23"
+                  style={{ textDecoration: 'none', flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 12.5 }}
+                >
+                  <Smartphone size={14} /> Pay via M-Pesa (*334#)
+                </a>
+                <button className="cha-btn cha-btn-ghost cha-btn-sm" style={{ fontSize: 12.5 }} onClick={() => openReportPayment(ui, store)}>
+                  I&apos;ve paid
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

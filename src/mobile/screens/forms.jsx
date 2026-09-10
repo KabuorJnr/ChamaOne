@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Video, MapPin, RefreshCw, MessageCircle, Copy } from 'lucide-react';
+import { Video, MapPin, RefreshCw, MessageCircle, Copy, PhoneCall, Smartphone } from 'lucide-react';
 import { useUI, fmtKES, StkIcon } from './kit';
 import { requestPayment } from '../../lib/mpesa';
 import { scheduleAt } from '../../lib/notifications';
@@ -22,6 +22,8 @@ export const openCreateGroup = (ui, store, open) =>
   ui.openSheet('Create your Chama', (close) => <CreateGroupForm store={store} close={close} open={open} />);
 export const openChangePassword = (ui) =>
   ui.openSheet('Change password', (close) => <ChangePasswordForm close={close} />);
+export const openReportPayment = (ui, store) =>
+  ui.openSheet('Pay via M-Pesa (*334#)', (close) => <ReportPaymentForm store={store} close={close} ui={ui} />);
 
 function ChangePasswordForm({ close }) {
   const { toast } = useUI();
@@ -308,7 +310,7 @@ function GroupSwitcher({ store, close, open, ui }) {
         ))}
       </div>
 
-      {isSupabaseConfigured && code && (
+      {isSupabaseConfigured && code && store.canManageMembers() && (
         <div className="cha-card" style={{ marginBottom: 12 }}>
           <p className="cha-muted cha-small" style={{ marginTop: 0 }}>Invite members to <b>{store.group.name}</b> — share this code:</p>
           <button className="cha-btn cha-btn-ghost" onClick={copy} style={{ fontFamily: 'monospace', letterSpacing: 3, fontSize: 20 }}>{code}</button>
@@ -389,3 +391,45 @@ function CreateGroupForm({ store, close, open }) {
     </>
   );
 }
+
+/* ---- member: pay via *334# and notify treasurer ---- */
+function ReportPaymentForm({ store, close, ui }) {
+  const [amt, setAmt] = useState(String(store.group.contributionAmount || ''));
+  const [code, setCode] = useState('');
+  const shortcode = store.settings?.shortcode;
+
+  return (
+    <>
+      <div className="cha-card" style={{ background: 'var(--blue-50)', borderColor: 'var(--blue-100)', marginTop: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Step 1: Pay to Chama via M-Pesa</div>
+        <p className="cha-muted cha-small" style={{ margin: '4px 0 10px' }}>
+          Dial <b>*334#</b> on your phone to send money or Lipa na M-Pesa {shortcode ? `to ${shortcode}` : 'to the Chama'}.
+        </p>
+        <a
+          className="cha-btn cha-btn-sm"
+          href="tel:*334%23"
+          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        >
+          <PhoneCall size={14} /> Dial *334# on Phone
+        </a>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', marginBottom: 4 }}>Step 2: Notify Treasurer to Record</div>
+        <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
+          After paying, enter the M-Pesa transaction code so the treasurer can confirm and record it into your record.
+        </p>
+        <label className="cha-field"><span>Amount (KES)</span>
+          <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
+        <label className="cha-field"><span>M-Pesa confirmation code</span>
+          <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. RGH12ABC" /></label>
+        <button className="cha-btn" onClick={() => {
+          if (!Number(amt)) return ui.toast('Enter an amount');
+          store.reportPayment({ amount: amt, providerRef: code });
+          close(); ui.toast('Payment reported — the treasurer will confirm and record it');
+        }}>Notify Treasurer</button>
+      </div>
+    </>
+  );
+}
+

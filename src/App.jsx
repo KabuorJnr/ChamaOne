@@ -76,20 +76,123 @@ export default function App() {
 
   // Logged out: a browser visitor sees the public landing first; "Open in
   // browser" (or an installed app) proceeds to the login gate.
+  let screen;
   if (!account) {
-    if (!entered) return <MobileLanding onEnter={() => setEntered(true)} />;
-    return <MobileAuth onAuthed={(u) => setAccount(u)} />;
+    screen = !entered ? <MobileLanding onEnter={() => setEntered(true)} /> : <MobileAuth onAuthed={(u) => setAccount(u)} />;
+  } else {
+    const gc = store.groupCount();
+    if (!hydrated && gc === 0) screen = <Splash />;
+    else if (gc === 0) screen = <MobileOnboard store={store} user={user} />;
+    else screen = <MobileShell store={store} user={user} onLogout={onLogout} />;
   }
 
-  // Signed in — wait for the backend load, then onboard or run the app.
-  // IMPORTANT: groupCount > 0 means a joinGroup() or createGroup() already
-  // succeeded — show the shell immediately regardless of the hydrated flag,
-  // which can lag behind due to Supabase auth-change events that reset it.
-  const gc = store.groupCount();
-  if (!hydrated && gc === 0) return <Splash />;
-  if (gc === 0) return <MobileOnboard store={store} user={user} />;
+  return (
+    <>
+      <UpdateBanner />
+      {screen}
+    </>
+  );
+}
 
-  return <MobileShell store={store} user={user} onLogout={onLogout} />;
+function UpdateBanner() {
+  const [newVersion, setNewVersion] = useState(null);
+  const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '11.1.0';
+
+  useEffect(() => {
+    // 1) Check remote version.json
+    const checkVersion = async () => {
+      try {
+        const res = await fetch(`/version.json?_t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.version && data.version !== currentVersion) {
+            setNewVersion(data.version);
+          }
+        }
+      } catch { /* offline / network error */ }
+    };
+
+    checkVersion();
+    const timer = setInterval(checkVersion, 60000);
+
+    // 2) Listen for service worker updates (PWA)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        setNewVersion((v) => v || 'new');
+      });
+    }
+
+    return () => clearInterval(timer);
+  }, [currentVersion]);
+
+  if (!newVersion) return null;
+
+  const handleUpdate = () => {
+    if (isNative()) {
+      window.location.href = 'https://chama-one-ten.vercel.app/ChamaOne.apk';
+    } else {
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 99999,
+      background: 'linear-gradient(90deg, #1E3A8A, #2563EB)',
+      color: '#fff',
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
+      fontSize: 12.5,
+      fontWeight: 500,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+        <span style={{ fontSize: 16 }}>🚀</span>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          New update available ({newVersion !== 'new' ? `v${newVersion}` : 'latest'})!
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+        <button
+          onClick={handleUpdate}
+          style={{
+            background: '#F59E0B',
+            color: '#000',
+            border: 'none',
+            borderRadius: 6,
+            padding: '5px 11px',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {isNative() ? 'Download APK' : 'Update Now'}
+        </button>
+        <button
+          onClick={() => setNewVersion(null)}
+          style={{
+            background: 'transparent',
+            color: 'rgba(255,255,255,0.7)',
+            border: 'none',
+            fontSize: 15,
+            cursor: 'pointer',
+            padding: '2px 4px',
+          }}
+          aria-label="Dismiss"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Splash() {

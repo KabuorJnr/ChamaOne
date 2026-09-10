@@ -4,6 +4,7 @@
 // In LIVE mode this would hit your SMS/WhatsApp provider; here it drops an
 // in-app notification per member and returns the count.
 export function remindUnpaid(store) {
+  if (!store.canManageMoney()) return 0;
   const cy = store.activeCycle().id;
   const unpaid = store.members().filter((m) => store.memberStatus(m.id, cy).state !== 'paid');
   unpaid.forEach((m) => store.notify('money', `Reminder sent to ${m.name} (${store.displayPhone(m.phone)}).`));
