@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Coins, Smartphone, Banknote, Download, Clock, Check, X, PhoneCall } from 'lucide-react';
 import { fmtKES, Avatar, useUI, Empty, downloadText } from './kit';
 import { fmtDate, fmtDateTime } from '../../store/chama';
+import { openReportPayment } from './forms';
 
 // Every contribution collected, newest first, grouped by cycle — with an
 // all-time total and per-cycle subtotals. Nothing collected is hidden.
@@ -57,7 +58,7 @@ export function ContributionsScreen({ store }) {
               >
                 <PhoneCall size={14} /> Dial *334# to Pay
               </a>
-              <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => openReport(ui, store)}>
+              <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => openReportPayment(ui, store)}>
                 I&apos;ve paid
               </button>
             </>
@@ -122,61 +123,11 @@ export function ContributionsScreen({ store }) {
   );
 }
 
-/* ---- member: report a payment ---- */
-function openReport(ui, store) {
-  ui.openSheet('Report a payment', (close) => <ReportForm store={store} close={close} ui={ui} />);
-}
-function ReportForm({ store, close, ui }) {
-  const ms = store.members();
-  const [memberId, setMemberId] = useState(store.myMemberId() || ms[0]?.id || '');
-  const [amt, setAmt] = useState(String(store.group.contributionAmount || ''));
-  const [code, setCode] = useState('');
-  const shortcode = store.settings?.shortcode;
-  return (
-    <>
-      <div className="cha-card" style={{ background: 'var(--blue-50)', borderColor: 'var(--blue-100)', marginTop: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)' }}>Step 1: Pay to Chama via M-Pesa</div>
-        <p className="cha-muted cha-small" style={{ margin: '4px 0 10px' }}>
-          Dial <b>*334#</b> on your phone to send payment {shortcode ? `to ${shortcode}` : 'to the Chama'}.
-        </p>
-        <a
-          className="cha-btn cha-btn-sm"
-          href="tel:*334%23"
-          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-        >
-          <PhoneCall size={14} /> Dial *334# now
-        </a>
-      </div>
-
-      <div style={{ marginTop: 12 }}>
-        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)', marginBottom: 4 }}>Step 2: Notify Treasurer to Record</div>
-        <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
-          Confirm your name and M-Pesa transaction code so the treasurer records your payment with the exact date & time.
-        </p>
-
-        <label className="cha-field"><span>Contributor (Your Name)</span>
-          <select className="cha-select" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
-            {ms.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select></label>
-
-        <label className="cha-field"><span>Amount (KES)</span>
-          <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
-        <label className="cha-field"><span>M-Pesa confirmation code</span>
-          <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. RGH12ABC" /></label>
-        <button className="cha-btn" onClick={() => {
-          if (!Number(amt)) return ui.toast('Enter an amount');
-          store.reportPayment({ memberId, amount: amt, providerRef: code });
-          close(); ui.toast('Payment reported — the treasurer will confirm and record it');
-        }}>Notify Treasurer</button>
-      </div>
-    </>
-  );
-}
-
 /* ---- officer: confirm a reported payment ---- */
 function openConfirm(ui, store, p) {
   ui.openSheet('Confirm payment', (close) => <ConfirmForm store={store} p={p} close={close} ui={ui} />);
 }
+
 function ConfirmForm({ store, p, close, ui }) {
   const ms = store.members();
   const [memberId, setMemberId] = useState(p.memberId || ms[0]?.id || '');

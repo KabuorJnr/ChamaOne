@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Video, MapPin, RefreshCw, MessageCircle, Copy, PhoneCall, Smartphone } from 'lucide-react';
+import { Video, MapPin, RefreshCw, MessageCircle, Copy, PhoneCall, Smartphone, ClipboardPaste, CheckCircle2 } from 'lucide-react';
 import { useUI, fmtKES, StkIcon, Avatar } from './kit';
 import { requestPayment } from '../../lib/mpesa';
+import { parseMpesaSms } from '../../lib/mpesaParser';
 import { scheduleAt } from '../../lib/notifications';
 import { changePassword } from '../../lib/account';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -404,7 +405,33 @@ function ReportPaymentForm({ store, close, ui }) {
   const [memberId, setMemberId] = useState(store.myMemberId() || ms[0]?.id || '');
   const [amt, setAmt] = useState(String(store.group.contributionAmount || ''));
   const [code, setCode] = useState('');
+  const [smsText, setSmsText] = useState('');
+  const [parsedInfo, setParsedInfo] = useState(null);
   const shortcode = store.settings?.shortcode;
+
+  const handleSmsChange = (val) => {
+    setSmsText(val);
+    const res = parseMpesaSms(val);
+    if (res && res.valid) {
+      if (res.code) setCode(res.code);
+      if (res.amount) setAmt(String(res.amount));
+      setParsedInfo(res);
+    }
+  };
+
+  const handleClipboard = async () => {
+    try {
+      if (navigator?.clipboard?.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          handleSmsChange(text);
+          ui.toast('M-Pesa SMS pasted & parsed!');
+          return;
+        }
+      }
+    } catch { /* clipboard read blocked */ }
+    ui.toast('Please tap the box and paste your SMS');
+  };
 
   return (
     <>
@@ -425,13 +452,43 @@ function ReportPaymentForm({ store, close, ui }) {
       <div style={{ marginTop: 14 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', marginBottom: 4 }}>Step 2: Notify Treasurer to Record</div>
         <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
-          Confirm your name and M-Pesa transaction code so the treasurer confirms and records your payment with the exact date & time.
+          Confirm your name, or paste the M-Pesa confirmation SMS to auto-fill the transaction code and amount.
         </p>
 
         <label className="cha-field"><span>Contributor (Your Name)</span>
           <select className="cha-select" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
             {ms.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select></label>
+
+        {/* Smart SMS Paste Box */}
+        <div style={{ margin: '10px 0 12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+              Paste M-Pesa SMS (Auto-Fill)
+            </span>
+            <button
+              type="button"
+              style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              onClick={handleClipboard}
+            >
+              <ClipboardPaste size={13} /> Paste
+            </button>
+          </div>
+          <textarea
+            className="cha-input"
+            rows={2}
+            value={smsText}
+            onChange={(e) => handleSmsChange(e.target.value)}
+            placeholder="Paste your M-Pesa message here (e.g. QWX72918AB Confirmed. Ksh1,000.00 sent to...)"
+            style={{ fontSize: 12, lineHeight: 1.4 }}
+          />
+          {parsedInfo && (
+            <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--good-100)', borderRadius: 8, fontSize: 11.5, color: 'var(--good)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CheckCircle2 size={14} />
+              <span>Extracted: {parsedInfo.code ? `Ref: ${parsedInfo.code}` : ''}{parsedInfo.amount ? ` · KES ${parsedInfo.amount}` : ''}{parsedInfo.dateStr ? ` · ${parsedInfo.dateStr}` : ''}</span>
+            </div>
+          )}
+        </div>
 
         <label className="cha-field"><span>Amount (KES)</span>
           <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
