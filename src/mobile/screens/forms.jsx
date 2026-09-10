@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Video, MapPin, RefreshCw, MessageCircle, Copy, PhoneCall, Smartphone } from 'lucide-react';
-import { useUI, fmtKES, StkIcon } from './kit';
+import { useUI, fmtKES, StkIcon, Avatar } from './kit';
 import { requestPayment } from '../../lib/mpesa';
 import { scheduleAt } from '../../lib/notifications';
 import { changePassword } from '../../lib/account';
@@ -24,6 +24,12 @@ export const openChangePassword = (ui) =>
   ui.openSheet('Change password', (close) => <ChangePasswordForm close={close} />);
 export const openReportPayment = (ui, store) =>
   ui.openSheet('Pay via M-Pesa (*334#)', (close) => <ReportPaymentForm store={store} close={close} ui={ui} />);
+export const openNewProject = (ui, store) =>
+  ui.openSheet('Start new project', (close) => <NewProjectForm store={store} close={close} />);
+export const openAllocateProject = (ui, store, projectId) =>
+  ui.openSheet('Allocate chama funds', (close) => <AllocateProjectForm store={store} close={close} projectId={projectId} />);
+export const openDisburseRotation = (ui, store) =>
+  ui.openSheet('Merry-Go-Round payout', (close) => <DisburseRotationForm store={store} close={close} />);
 
 function ChangePasswordForm({ close }) {
   const { toast } = useUI();
@@ -432,4 +438,166 @@ function ReportPaymentForm({ store, close, ui }) {
     </>
   );
 }
+
+/* ---- new project form ---- */
+function NewProjectForm({ store, close }) {
+  const { toast } = useUI();
+  const [title, setTitle] = useState('');
+  const [cat, setCat] = useState('Investment');
+  const [target, setTarget] = useState('');
+  const [date, setDate] = useState('');
+  const [desc, setDesc] = useState('');
+
+  const submit = () => {
+    if (!title.trim()) return toast('Enter a project title');
+    const amt = Number(target);
+    if (!amt || amt <= 0) return toast('Enter a valid target budget');
+    store.createProject({
+      title,
+      category: cat,
+      targetBudget: amt,
+      targetDate: date,
+      description: desc,
+    });
+    toast(`Project "${title}" created`);
+    close();
+  };
+
+  return (
+    <>
+      <label className="cha-field"><span>Project Title</span>
+        <input className="cha-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Land Purchase, Welfare Kitty, Agribusiness" /></label>
+      <label className="cha-field"><span>Category</span>
+        <select className="cha-select" value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="Investment">Investment & Wealth</option>
+          <option value="Real Estate">Land & Property</option>
+          <option value="Agribusiness">Agriculture / Livestock</option>
+          <option value="Welfare">Welfare & Emergency Kitty</option>
+          <option value="Asset">Asset Acquisition</option>
+          <option value="Business">Business Venture</option>
+        </select></label>
+      <label className="cha-field"><span>Target Budget (KES)</span>
+        <input className="cha-input cha-num" type="number" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="e.g. 500000" /></label>
+      <label className="cha-field"><span>Target Completion Date (optional)</span>
+        <input className="cha-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+      <label className="cha-field"><span>Description & Objectives</span>
+        <textarea className="cha-input" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="What is the group aiming to achieve?" /></label>
+      <button className="cha-btn" onClick={submit}>Create Project</button>
+    </>
+  );
+}
+
+/* ---- allocate to project form ---- */
+function AllocateProjectForm({ store, close, projectId }) {
+  const { toast } = useUI();
+  const projects = store.getProjects().filter((p) => p.status !== 'completed');
+  const [pid, setPid] = useState(projectId || projects[0]?.id || '');
+  const [amt, setAmt] = useState('');
+  const [note, setNote] = useState('');
+  const pool = store.poolBalance();
+  const selectedProject = projects.find((p) => p.id === pid);
+
+  const submit = () => {
+    if (!pid) return toast('Select a project');
+    const numAmt = Number(amt);
+    if (!numAmt || numAmt <= 0) return toast('Enter a valid allocation amount');
+    if (numAmt > pool) return toast(`Amount exceeds available pool balance (${fmtKES(pool)})`);
+    const res = store.allocateToProject(pid, numAmt, note);
+    if (res?.error) return toast(res.error);
+    toast(`Allocated ${fmtKES(numAmt)} to ${selectedProject?.title}`);
+    close();
+  };
+
+  if (!projects.length) {
+    return (
+      <div style={{ textAlign: 'center', padding: '20px 0' }}>
+        <p className="cha-muted">No active projects to allocate funds to.</p>
+        <button className="cha-btn cha-btn-sm" onClick={() => { close(); openNewProject({ openSheet: () => {} }, store); }}>Create a project first</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="cha-card" style={{ background: 'var(--blue-50)', borderColor: 'var(--blue-100)', marginTop: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="cha-muted cha-small">Available Chama Pool</span>
+          <b className="cha-num" style={{ color: 'var(--good)' }}>{fmtKES(pool)}</b>
+        </div>
+      </div>
+
+      <label className="cha-field"><span>Project</span>
+        <select className="cha-select" value={pid} onChange={(e) => setPid(e.target.value)}>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.title} (Target: {fmtKES(p.targetBudget)} | Funded: {fmtKES(p.allocatedAmount || 0)})</option>
+          ))}
+        </select></label>
+
+      {selectedProject && (
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: -4, marginBottom: 8 }}>
+          Current funding: {fmtKES(selectedProject.allocatedAmount || 0)} of {fmtKES(selectedProject.targetBudget)}
+        </div>
+      )}
+
+      <label className="cha-field"><span>Amount to Allocate (KES)</span>
+        <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="e.g. 50000" /></label>
+      <label className="cha-field"><span>Note / Resolution</span>
+        <input className="cha-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Resolution from AGM 2026" /></label>
+      <button className="cha-btn" onClick={submit}>Confirm Allocation</button>
+    </>
+  );
+}
+
+/* ---- disburse merry-go-round pot form ---- */
+function DisburseRotationForm({ store, close }) {
+  const { toast } = useUI();
+  const rot = store.getRotation();
+  const recipient = rot.recipient;
+  const potAmt = rot.collected > 0 ? rot.collected : rot.targetPot;
+  const pool = store.poolBalance();
+  const [note, setNote] = useState('');
+
+  if (!recipient) {
+    return (
+      <div style={{ textAlign: 'center', padding: '20px 0' }}>
+        <p className="cha-muted">No recipient in line. Add members to the Chama first.</p>
+        <button className="cha-btn cha-btn-sm" onClick={close}>Close</button>
+      </div>
+    );
+  }
+
+  const submit = () => {
+    if (potAmt <= 0) return toast('No pot funds to disburse');
+    if (potAmt > pool) return toast(`Pot amount (${fmtKES(potAmt)}) exceeds available pool balance (${fmtKES(pool)})`);
+    const res = store.disburseRotationPot(note);
+    if (res?.error) return toast(res.error);
+    toast(`Pot of ${fmtKES(potAmt)} successfully disbursed to ${recipient.name}!`);
+    close();
+  };
+
+  return (
+    <>
+      <div className="cha-card" style={{ marginTop: 0, textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+          <Avatar name={recipient.name} size={48} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>{recipient.name}</div>
+        <div className="cha-muted cha-small">{recipient.phone || 'Member'} · Designated Recipient</div>
+        <div style={{ marginTop: 14, padding: '12px', background: 'var(--good-100)', borderRadius: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--good)' }}>CYCLE PAYOUT POT</div>
+          <div className="cha-num" style={{ fontSize: 24, fontWeight: 800, color: 'var(--good)', marginTop: 2 }}>{fmtKES(potAmt)}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>Collected: {fmtKES(rot.collected)} · Target: {fmtKES(rot.targetPot)}</div>
+        </div>
+      </div>
+
+      <label className="cha-field"><span>Disbursement Note / Payment Ref</span>
+        <input className="cha-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Sent via M-Pesa ref QWX4928" /></label>
+
+      <button className="cha-btn" style={{ background: 'var(--good)' }} onClick={submit}>
+        Confirm Payout to {recipient.name}
+      </button>
+    </>
+  );
+}
+
 

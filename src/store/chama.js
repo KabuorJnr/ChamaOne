@@ -72,11 +72,17 @@ function blankGroup() {
     members: [], cycles: [{ id: cid, label: '', startDate: now(), endDate: now() }],
     contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false }, onboarded: false,
+    rotation: { recipientId: null, history: [], order: [] },
+    projects: [],
   };
 }
 
 function ensure() {
-  if (state) return state;
+  if (state) {
+    if (!state.rotation) state.rotation = { recipientId: null, history: [], order: [] };
+    if (!state.projects) state.projects = [];
+    return state;
+  }
   // Remote mode: never seed demo data — the snapshot is hydrated from Supabase
   // after sign-in (see hydrate()). Until then, hand back a safe blank WITHOUT
   // storing it in the module-level `state` variable, so that a subsequent call
@@ -84,7 +90,12 @@ function ensure() {
   if (REMOTE) {
     if (!root) root = { activeGroupId: null, groups: {} };
     const s = root.groups[root.activeGroupId];
-    if (s) { state = s; return state; }
+    if (s) {
+      if (!s.rotation) s.rotation = { recipientId: null, history: [], order: [] };
+      if (!s.projects) s.projects = [];
+      state = s;
+      return state;
+    }
     return blankGroup(); // transient placeholder — do NOT store in state
   }
   // Load the multi-group container.
@@ -95,6 +106,10 @@ function ensure() {
   if (!root || !root.groups) root = { activeGroupId: null, groups: {} };
   if (!root.groups[root.activeGroupId]) root.activeGroupId = Object.keys(root.groups)[0] || null;
   state = root.groups[root.activeGroupId] || blankGroup();
+  if (state) {
+    if (!state.rotation) state.rotation = { recipientId: null, history: [], order: [] };
+    if (!state.projects) state.projects = [];
+  }
   return state;
 }
 
@@ -296,6 +311,8 @@ function buildGroup({ name, type, amount, frequency, members: mem }) {
     cycles: [makeCycle(cycleId, frequency)],
     contributions: [], loans: [], meetings: [], ledger: [], notifications: [], payments: [],
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false },
+    rotation: { recipientId: null, history: [], order: [] },
+    projects: [],
     onboarded: true,
   };
 }
@@ -599,6 +616,175 @@ export function toCSV() {
   return rows.map((r) => r.join(',')).join('\n');
 }
 
+/* ---------- merry-go-round rotation ---------- */
+export function getRotation() {
+  const s = ensure();
+  if (!s.rotation) s.rotation = { recipientId: null, history: [], order: [] };
+  const ms = members();
+  const activeIds = ms.map((m) => m.id);
+  let order = Array.isArray(s.rotation.order) ? s.rotation.order.filter((id) => activeIds.includes(id)) : [];
+  activeIds.forEach((id) => {
+    if (!order.includes(id)) order.push(id);
+  });
+  s.rotation.order = order;
+
+  let recipientId = s.rotation.recipientId;
+  if (!recipientId || !activeIds.includes(recipientId)) {
+    recipientId = order[0] || null;
+    s.rotation.recipientId = recipientId;
+  }
+  const recipient = ms.find((m) => m.id === recipientId) || null;
+  const queue = order.map((id) => ms.find((m) => m.id === id)).filter(Boolean);
+
+  const stats = cycleStats();
+  const targetPot = (s.group.contributionAmount || 0) * ms.length;
+  const collected = stats.collected;
+  const isReady = collected >= targetPot && targetPot > 0;
+
+  return {
+    recipientId,
+    recipient,
+    order,
+    queue,
+    targetPot,
+    collected,
+    isReady,
+    history: s.rotation.history || [],
+  };
+}
+
+export function setRotationRecipient(recipientId) {
+  const s = ensure();
+  if (!s.rotation) s.rotation = { recipientId: null, history: [], order: [] };
+  s.rotation.recipientId = recipientId;
+  const m = memberById(recipientId);
+  notify('rotation', `${m ? m.name : 'A member'} is now set as the next Merry-Go-Round payout recipient.`);
+  emit();
+}
+
+export function reorderRotation(newOrder) {
+  const s = ensure();
+  if (!s.rotation) s.rotation = { recipientId: null, history: [], order: [] };
+  s.rotation.order = newOrder;
+  emit();
+}
+
+export function disburseRotationPot(note) {
+  const s = ensure();
+  const rot = getRotation();
+  if (!rot.recipient) return { error: 'No recipient selected' };
+  const potAmount = rot.collected > 0 ? rot.collected : rot.targetPot;
+  if (potAmount <= 0) return { error: 'No pot funds to disburse' };
+  if (potAmount > poolBalance()) return { error: 'Insufficient chama pool balance' };
+
+  const lx = addLedgerEntry({
+    type: 'Merry-go-round payout',
+    amount: potAmount,
+    direction: 'out',
+    memberId: rot.recipient.id,
+    note: note || `Merry-go-round cycle payout to ${rot.recipient.name}`,
+  });
+
+  const histItem = {
+    id: uid('mgh'),
+    recipientId: rot.recipient.id,
+    recipientName: rot.recipient.name,
+    amount: potAmount,
+    date: now(),
+    cycleId: activeCycle().id,
+  };
+  s.rotation.history = s.rotation.history || [];
+  s.rotation.history.unshift(histItem);
+
+  const currentIndex = rot.order.indexOf(rot.recipient.id);
+  const nextIndex = (currentIndex + 1) % rot.order.length;
+  const nextRecipientId = rot.order[nextIndex] || null;
+  s.rotation.recipientId = nextRecipientId;
+  const nextRecipient = memberById(nextRecipientId);
+
+  notify('money', `Merry-go-round pot of ${fmtKES(potAmount)} paid out to ${rot.recipient.name}! Next: ${nextRecipient ? nextRecipient.name : 'Done'}.`);
+  emit();
+  if (REMOTE) {
+    mirror(db.addLedger(s.group.id, lx));
+  }
+  return { ok: true, recipient: rot.recipient, amount: potAmount };
+}
+
+/* ---------- chama projects ---------- */
+export function getProjects() {
+  const s = ensure();
+  if (!s.projects) s.projects = [];
+  return s.projects;
+}
+
+export function createProject({ title, description, targetBudget, category, targetDate }) {
+  const s = ensure();
+  if (!s.projects) s.projects = [];
+  const p = {
+    id: uid('prj'),
+    title: (title || '').trim(),
+    description: (description || '').trim(),
+    targetBudget: Number(targetBudget) || 0,
+    allocatedAmount: 0,
+    category: category || 'Investment',
+    status: 'active',
+    targetDate: targetDate || '',
+    createdAt: now(),
+    milestones: [],
+  };
+  s.projects.unshift(p);
+  notify('project', `New project "${p.title}" created with target budget ${fmtKES(p.targetBudget)}.`);
+  emit();
+  return p;
+}
+
+export function allocateToProject(projectId, amount, note) {
+  const s = ensure();
+  if (!s.projects) s.projects = [];
+  const p = s.projects.find((x) => x.id === projectId);
+  if (!p) return { error: 'Project not found' };
+  const numAmt = Number(amount);
+  if (numAmt <= 0) return { error: 'Invalid amount' };
+  if (numAmt > poolBalance()) return { error: 'Insufficient pool balance' };
+
+  p.allocatedAmount = (p.allocatedAmount || 0) + numAmt;
+  if (p.allocatedAmount >= p.targetBudget && p.targetBudget > 0) {
+    p.status = 'funded';
+  }
+
+  const lx = addLedgerEntry({
+    type: 'Project allocation',
+    amount: numAmt,
+    direction: 'out',
+    note: `Allocated to project "${p.title}": ${note || ''}`,
+  });
+
+  notify('money', `Allocated ${fmtKES(numAmt)} to project "${p.title}".`);
+  emit();
+  if (REMOTE) {
+    mirror(db.addLedger(s.group.id, lx));
+  }
+  return { ok: true, project: p };
+}
+
+export function updateProject(projectId, patch) {
+  const s = ensure();
+  if (!s.projects) s.projects = [];
+  const p = s.projects.find((x) => x.id === projectId);
+  if (p) {
+    Object.assign(p, patch);
+    emit();
+  }
+  return p;
+}
+
+export function deleteProject(projectId) {
+  const s = ensure();
+  if (!s.projects) s.projects = [];
+  s.projects = s.projects.filter((x) => x.id !== projectId);
+  emit();
+}
+
 /* ---------- lifecycle ---------- */
 export function getState() { return state; } // raw current state (may be null pre-init)
 // reset/wipe rebuild the whole container as a single fresh demo group.
@@ -626,6 +812,8 @@ const actions = {
   applyLoan, loanById, voteLoan, loanTotals, disburseLoan, repayLoan,
   createMeeting, makeMeetingLink, meetingById, addMotion, voteMotion, closeMotion, saveMinutes,
   poolBalance, financialSummary, contributionTrend, toCSV,
+  getRotation, setRotationRecipient, reorderRotation, disburseRotationPot,
+  getProjects, createProject, allocateToProject, updateProject, deleteProject,
   notify: (t, x) => { notify(t, x); emit(); }, unreadCount, markAllRead, markRead,
   members, memberById, activeCycle, displayPhone, normalizePhone,
   myRole, myMemberId, canManageMoney, canManageMeetings, canManageMembers,

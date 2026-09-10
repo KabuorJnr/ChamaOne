@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   BarChart3, BookOpen, Settings, FilePlus2, Download, Printer, ChevronRight,
   Wallet, TrendingUp, RefreshCw, Trash2, ArrowDownLeft, ArrowUpRight, Lock, Bell, BellOff, Coins, ArrowLeftRight,
-  KeyRound, LogOut,
+  KeyRound, LogOut, RotateCcw, Target,
 } from 'lucide-react';
 import { fmtKES, BarChart, SecHead, useUI, downloadText } from './kit';
 import { fmtDate } from '../../store/chama';
@@ -15,6 +15,9 @@ export function MoreScreen({ store, open, user, onLogout }) {
   const ui = useUI();
   const { toast, confirm } = ui;
   const fin = store.financialSummary();
+  const isMerryGoRound = store.group.type === 'Merry-go-round';
+  const projects = store.getProjects();
+
   return (
     <>
       {/* Slim balance strip — the full hero already lives on Home. */}
@@ -47,8 +50,12 @@ export function MoreScreen({ store, open, user, onLogout }) {
         </button>
       </div>
 
-      <SecHead title="Money" />
+      <SecHead title="Money & Activities" />
       <div className="cha-list-card">
+        {isMerryGoRound && (
+          <Item icon={RotateCcw} color="#2563EB" bg="#DBEAFE" title="Merry-Go-Round Roster" sub="Turn-taking payout queue" onClick={() => open('rotation')} />
+        )}
+        <Item icon={Target} color="#059669" bg="#D1FAE5" title="Projects & Investments" sub={`${projects.length} project${projects.length === 1 ? '' : 's'} tracked`} onClick={() => open('projects')} />
         <Item icon={Coins} color="var(--good)" bg="var(--good-100)" title="Collections" sub="Every contribution collected" onClick={() => open('collections')} />
         <Item icon={BarChart3} color="var(--blue)" bg="var(--blue-50)" title="Reports" sub="Statements, trends, exports" onClick={() => open('reports')} />
         <Item icon={BookOpen} color="#7C3AED" bg="#EDE9FE" title="Ledger" sub="Full audit trail" onClick={() => open('ledger')} />

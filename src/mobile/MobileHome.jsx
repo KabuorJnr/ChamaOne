@@ -1,8 +1,9 @@
 import {
   Plus, CreditCard, Users, Megaphone, ArrowRight, TrendingUp, Vote, ArrowUp, ArrowDown, Video, ChevronsUpDown, PhoneCall, Smartphone,
+  RotateCcw, HandCoins, Target,
 } from 'lucide-react';
 import { fmtKES, Ring, BarChart, SecHead, Avatar, useUI, VoteTag } from './screens/kit';
-import { openCollect, openGroupSwitcher, openReportPayment } from './screens/forms';
+import { openCollect, openGroupSwitcher, openReportPayment, openDisburseRotation, openNewProject } from './screens/forms';
 import { remindUnpaid } from './screens/actions';
 
 const BLUE = '#2563EB', GOOD = '#16A34A', WARN = '#D97706', VIOLET = '#7C3AED';
@@ -33,6 +34,9 @@ export default function MobileHome({ store, open }) {
   const groupCount = store.groupCount();
   const canMoney = store.canManageMoney();
   const pendingPays = store.pendingPayments();
+  const isMerryGoRound = store.group.type === 'Merry-go-round';
+  const rot = isMerryGoRound ? store.getRotation() : null;
+  const projects = store.getProjects();
 
   return (
     <>
@@ -91,10 +95,104 @@ export default function MobileHome({ store, open }) {
         </div>
       </div>
 
+      {/* Merry-Go-Round Turn Card */}
+      {isMerryGoRound && rot && (
+        <div className="cha-card" style={{ borderLeft: '4px solid #2563EB' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: '#2563EB', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <RotateCcw size={13} /> MERRY-GO-ROUND POT
+            </span>
+            <span className={`cha-pill2 ${rot.isReady ? 'cha-pill-ok' : 'cha-pill-info'}`} style={{ fontSize: 11 }}>
+              {rot.isReady ? 'Pot Ready for Hand-off' : 'Collecting'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>Next in line to receive pot:</div>
+              <div style={{ fontSize: 16, fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Avatar name={rot.recipient?.name || 'Chama'} size={28} />
+                <b>{rot.recipient?.name || 'No recipient set'}</b>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Payout Pot</div>
+              <b className="cha-num" style={{ fontSize: 17, color: 'var(--ink)' }}>{fmtKES(rot.collected > 0 ? rot.collected : rot.targetPot)}</b>
+            </div>
+          </div>
+
+          {rot.queue.length > 1 && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Upcoming: <b>{rot.queue.slice(1, 3).map((m) => m.name).join(', ')}</b></span>
+              <button style={{ fontSize: 11.5, padding: 0, fontWeight: 700, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => open('rotation')}>
+                View Roster →
+              </button>
+            </div>
+          )}
+
+          {canMoney && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+              <button
+                className="cha-btn cha-btn-sm"
+                style={{ flex: 1, background: 'var(--blue)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 12.5 }}
+                onClick={() => openDisburseRotation(ui, store)}
+              >
+                <HandCoins size={14} /> Disburse Pot
+              </button>
+              <button
+                className="cha-btn cha-btn-ghost cha-btn-sm"
+                style={{ fontSize: 12.5 }}
+                onClick={() => open('rotation')}
+              >
+                Manage Roster
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* KPIs */}
       <div className="cha-mini-grid">
         <Kpi icon={CreditCard} color={GOOD} value={fmtKES(fin.outstandingLoans)} label={`${fin.loanCount} active loan${fin.loanCount === 1 ? '' : 's'}`} />
         <Kpi icon={Users} color={BLUE} value={fin.memberCount} label={`${store.group.frequency} · ${fmtKES(store.group.contributionAmount)}`} />
+      </div>
+
+      {/* Projects summary card */}
+      <div className="cha-card">
+        <SecHead title="Projects & Investments" action="All" onAction={() => open('projects')} />
+        {projects.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+            <span className="cha-muted cha-small">No group investment projects started yet.</span>
+            {canMoney && (
+              <button className="cha-btn cha-btn-sm" style={{ fontSize: 12, padding: '5px 10px' }} onClick={() => openNewProject(ui, store)}>
+                <Plus size={13} /> Start Project
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ marginTop: 6 }}>
+            {projects.slice(0, 2).map((p) => {
+              const allocated = p.allocatedAmount || 0;
+              const target = p.targetBudget || 1;
+              const pct = Math.min(100, Math.round((allocated / target) * 100));
+              return (
+                <button
+                  key={p.id}
+                  style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '8px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}
+                  onClick={() => open('projects')}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <b style={{ fontSize: 13.5 }}>{p.title}</b>
+                    <span className="cha-num" style={{ fontSize: 12, fontWeight: 700, color: 'var(--good)' }}>{fmtKES(allocated)} / {fmtKES(p.targetBudget)}</span>
+                  </div>
+                  <div style={{ height: 5, borderRadius: 99, background: 'var(--line)', overflow: 'hidden', marginTop: 6 }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--good)' : 'var(--blue)', borderRadius: 99 }} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* payments to confirm */}

@@ -3,6 +3,8 @@ import { LoansScreen } from './LoansScreen';
 import { MeetingsScreen, MeetingDetail } from './MeetingsScreen';
 import { MoreScreen, ReportsScreen, LedgerScreen, SettingsScreen } from './MoreScreens';
 import { ContributionsScreen } from './ContributionsScreen';
+import { RotationScreen } from './RotationScreen';
+import { ProjectsScreen } from './ProjectsScreen';
 
 // name -> { title, Component }. 'home' is handled directly by the shell.
 export const SCREENS = {
@@ -16,6 +18,8 @@ export const SCREENS = {
   reports: { title: 'Reports', Component: ReportsScreen },
   ledger: { title: 'Ledger', Component: LedgerScreen },
   settings: { title: 'Settings', Component: SettingsScreen },
+  rotation: { title: 'Merry-Go-Round', Component: RotationScreen },
+  projects: { title: 'Chama Projects', Component: ProjectsScreen },
 };
 
 // Bottom-nav tabs. `key` doubles as the root screen name.

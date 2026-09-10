@@ -178,6 +178,8 @@ export async function loadGroupState(groupId) {
     notifications: (notifications.data || []).map(rowToNotif),
     payments: (paymentsRes?.data || []).map(rowToPayment),
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false },
+    rotation: { recipientId: null, history: [], order: [] },
+    projects: [],
     onboarded: true,
   };
 }
