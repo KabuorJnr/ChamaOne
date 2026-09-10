@@ -48,21 +48,49 @@ export function ContributionsScreen({ store }) {
         <div className="cha-sec" style={{ margin: '0 0 4px' }}><h5>Current cycle</h5><a>{cur.paidCount} of {cur.totalMembers} paid</a></div>
         <div className="cha-cycle-big cha-num">{fmtKES(cur.collected)} <span>/ {fmtKES(cur.expected)}</span></div>
         <p className="cha-muted cha-small" style={{ margin: '2px 0 10px' }}>{cy.label} · All-time collected: <b className="cha-num">{fmtKES(totalCollected)}</b></p>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {!canMoney && (
-            <>
-              <a
-                className="cha-btn cha-btn-sm"
-                href="tel:*334%23"
-                style={{ textDecoration: 'none', flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              >
-                <PhoneCall size={14} /> Dial *334# to Pay
-              </a>
-              <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => openReportPayment(ui, store)}>
-                I&apos;ve paid
-              </button>
-            </>
-          )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+          <a
+            className="cha-btn"
+            href="tel:*334%23"
+            style={{
+              textDecoration: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 700,
+              background: 'linear-gradient(135deg, #059669, #047857)',
+              color: '#fff',
+              borderRadius: 12,
+              padding: '9px 8px',
+              border: 'none',
+              boxShadow: '0 2px 6px rgba(4,120,87,0.25)',
+              minHeight: 38,
+            }}
+          >
+            <PhoneCall size={15} /> Dial *334#
+          </a>
+          <button
+            className="cha-btn cha-btn-ghost"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 12,
+              padding: '9px 8px',
+              background: 'var(--blue-50)',
+              color: 'var(--blue-deep)',
+              border: '1px solid var(--blue-100)',
+              minHeight: 38,
+            }}
+            onClick={() => openReportPayment(ui, store)}
+          >
+            I&apos;ve paid
+          </button>
         </div>
       </div>
 

@@ -141,40 +141,46 @@ function UpdateBanner() {
   return (
     <div style={{
       position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
+      top: 'calc(var(--safe-top, max(env(safe-area-inset-top, 0px), 36px)) + 8px)',
+      left: 12,
+      right: 12,
       zIndex: 99999,
-      background: 'linear-gradient(90deg, #1E3A8A, #2563EB)',
+      background: 'linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%)',
       color: '#fff',
       padding: '10px 14px',
+      borderRadius: 16,
+      border: '1px solid rgba(147, 180, 251, 0.35)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: 10,
-      boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
-      fontSize: 12.5,
-      fontWeight: 500,
+      boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-        <span style={{ fontSize: 16 }}>🚀</span>
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          New update available ({newVersion !== 'new' ? `v${newVersion}` : 'latest'})!
-        </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>🚀</span>
+        <div style={{ lineHeight: 1.25, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#F8FAFC', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            Update Available
+          </div>
+          <div style={{ fontSize: 11, color: '#93B4FB' }}>
+            Version {newVersion !== 'new' ? `v${newVersion}` : 'latest'}
+          </div>
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
         <button
           onClick={handleUpdate}
           style={{
-            background: '#F59E0B',
+            background: 'linear-gradient(135deg, #F59E0B, #D97706)',
             color: '#000',
             border: 'none',
-            borderRadius: 6,
-            padding: '5px 11px',
+            borderRadius: 8,
+            padding: '7px 13px',
             fontSize: 12,
-            fontWeight: 700,
+            fontWeight: 800,
             cursor: 'pointer',
             whiteSpace: 'nowrap',
+            boxShadow: '0 2px 6px rgba(245,158,11,0.3)',
           }}
         >
           {isNative() ? 'Download APK' : 'Update Now'}
@@ -182,12 +188,18 @@ function UpdateBanner() {
         <button
           onClick={() => setNewVersion(null)}
           style={{
-            background: 'transparent',
-            color: 'rgba(255,255,255,0.7)',
+            background: 'rgba(255,255,255,0.14)',
+            color: '#E2E8F0',
             border: 'none',
-            fontSize: 15,
+            borderRadius: '50%',
+            width: 26,
+            height: 26,
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 13,
+            fontWeight: 700,
             cursor: 'pointer',
-            padding: '2px 4px',
+            padding: 0,
           }}
           aria-label="Dismiss"
         >

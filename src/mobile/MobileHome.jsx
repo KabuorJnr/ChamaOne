@@ -1,6 +1,6 @@
 import {
   Plus, CreditCard, Users, Megaphone, ArrowRight, TrendingUp, Vote, ArrowUp, ArrowDown, Video, ChevronsUpDown, PhoneCall, Smartphone,
-  RotateCcw, HandCoins, Target,
+  RotateCcw, HandCoins, Target, CheckCircle2,
 } from 'lucide-react';
 import { fmtKES, Ring, BarChart, SecHead, Avatar, useUI, VoteTag } from './screens/kit';
 import { openCollect, openGroupSwitcher, openReportPayment, openDisburseRotation, openNewProject } from './screens/forms';
@@ -80,47 +80,55 @@ export default function MobileHome({ store, open }) {
           </div>
         </div>
 
-        {!canMoney && (
-          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #EEF2F6', display: 'flex', gap: 8 }}>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <a
               className="cha-btn"
               href="tel:*334%23"
               style={{
                 textDecoration: 'none',
-                flex: 1.3,
-                display: 'inline-flex',
+                display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 6,
                 fontSize: 13,
                 fontWeight: 700,
-                background: '#047857',
+                background: 'linear-gradient(135deg, #059669, #047857)',
                 color: '#fff',
-                borderRadius: 10,
-                padding: '9px 12px',
+                borderRadius: 12,
+                padding: '10px 8px',
+                border: 'none',
+                boxShadow: '0 2px 6px rgba(4,120,87,0.25)',
                 minHeight: 40,
-                whiteSpace: 'nowrap',
               }}
             >
-              <Smartphone size={16} /> Pay via M-Pesa (*334#)
+              <Smartphone size={16} /> Pay via M-Pesa
             </a>
             <button
               className="cha-btn cha-btn-ghost"
               style={{
-                flex: 0.9,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
                 fontSize: 13,
                 fontWeight: 600,
-                borderRadius: 10,
-                padding: '9px 12px',
+                borderRadius: 12,
+                padding: '10px 8px',
+                background: 'var(--blue-50)',
+                color: 'var(--blue-deep)',
+                border: '1px solid var(--blue-100)',
                 minHeight: 40,
-                whiteSpace: 'nowrap',
               }}
               onClick={() => openReportPayment(ui, store)}
             >
-              I&apos;ve paid
+              <CheckCircle2 size={16} /> I&apos;ve paid
             </button>
           </div>
-        )}
+          <div style={{ textAlign: 'center', marginTop: 7, fontSize: 11, color: 'var(--muted)' }}>
+            Dial <b>*334#</b> to send money, then tap <b>I&apos;ve paid</b> to submit ref
+          </div>
+        </div>
       </div>
 
       {/* Merry-Go-Round Turn Card */}
