@@ -77,22 +77,50 @@ export default function MobileHome({ store, open }) {
               <button className="cha-chip2" onClick={() => open('collections')}>Collections</button>
               <button className="cha-chip2" onClick={() => open('members')}>Members</button>
             </div>
-            {!canMoney && (
-              <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-                <a
-                  className="cha-btn cha-btn-sm"
-                  href="tel:*334%23"
-                  style={{ textDecoration: 'none', flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 12.5 }}
-                >
-                  <Smartphone size={14} /> Pay via M-Pesa (*334#)
-                </a>
-                <button className="cha-btn cha-btn-ghost cha-btn-sm" style={{ fontSize: 12.5 }} onClick={() => openReportPayment(ui, store)}>
-                  I&apos;ve paid
-                </button>
-              </div>
-            )}
           </div>
         </div>
+
+        {!canMoney && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #EEF2F6', display: 'flex', gap: 8 }}>
+            <a
+              className="cha-btn"
+              href="tel:*334%23"
+              style={{
+                textDecoration: 'none',
+                flex: 1.3,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                fontSize: 13,
+                fontWeight: 700,
+                background: '#047857',
+                color: '#fff',
+                borderRadius: 10,
+                padding: '9px 12px',
+                minHeight: 40,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Smartphone size={16} /> Pay via M-Pesa (*334#)
+            </a>
+            <button
+              className="cha-btn cha-btn-ghost"
+              style={{
+                flex: 0.9,
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 10,
+                padding: '9px 12px',
+                minHeight: 40,
+                whiteSpace: 'nowrap',
+              }}
+              onClick={() => openReportPayment(ui, store)}
+            >
+              I&apos;ve paid
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Merry-Go-Round Turn Card */}
