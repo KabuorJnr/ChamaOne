@@ -13,6 +13,7 @@ import './mobile/mobile.css';
 // show the public landing (download + install) first.
 const isInstalledApp = () => {
   try { if (isNative()) return true; } catch { /* ignore */ }
+  try { if (sessionStorage.getItem('chamaone.entered') === 'true') return true; } catch { /* ignore */ }
   try { return window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone || false; } catch { return false; }
 };
 
@@ -44,8 +45,16 @@ export default function App() {
   // Supabase auth changes (sign-in/out/token refresh across devices).
   useEffect(() => {
     let alive = true;
-    currentUser().then((u) => { if (alive) { setAccount(u); setAuthReady(true); } });
-    const unsub = onAuthChange((u) => { if (alive) setAccount(u); });
+    currentUser().then((u) => {
+      if (alive && u) setAccount(u);
+      if (alive) setAuthReady(true);
+    });
+    const unsub = onAuthChange((u) => {
+      if (alive) {
+        setAccount(u);
+        if (u) setAuthReady(true);
+      }
+    });
     return () => { alive = false; unsub(); };
   }, []);
 
@@ -78,7 +87,11 @@ export default function App() {
   // browser" (or an installed app) proceeds to the login gate.
   let screen;
   if (!account) {
-    screen = !entered ? <MobileLanding onEnter={() => setEntered(true)} /> : <MobileAuth onAuthed={(u) => setAccount(u)} />;
+    screen = !entered ? (
+      <MobileLanding onEnter={() => { setEntered(true); try { sessionStorage.setItem('chamaone.entered', 'true'); } catch {} }} />
+    ) : (
+      <MobileAuth onAuthed={(u) => setAccount(u)} />
+    );
   } else {
     const gc = store.groupCount();
     if (!hydrated && gc === 0) screen = <Splash />;

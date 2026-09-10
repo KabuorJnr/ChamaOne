@@ -1,7 +1,7 @@
 {
   "name": "chamaone",
   "private": true,
-  "version": "1.5.2",
+  "version": "1.5.3",
   "type": "module",
   "description": "ChamaOne — Chama & savings-group manager. Built in the EduOne mobile style (React + Capacitor).",
   "scripts": {

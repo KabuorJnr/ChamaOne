@@ -33,6 +33,22 @@ function friendly(error) {
   return error?.message || 'Something went wrong. Please try again.';
 }
 
+const USER_KEY = 'chamaone.user.v1';
+
+function cacheUser(u) {
+  try {
+    if (u) localStorage.setItem(USER_KEY, JSON.stringify(u));
+    else localStorage.removeItem(USER_KEY);
+  } catch { /* ignore */ }
+}
+
+function getCachedUser() {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
 /** Create an account. Returns { ok, user?, needsConfirmation?, error? }. */
 export async function signUp({ name, email, password, phone }) {
   if (supabase) {
@@ -42,27 +58,50 @@ export async function signUp({ name, email, password, phone }) {
       options: { data: { full_name: (name || '').trim(), phone: (phone || '').trim() } },
     });
     if (error) return { ok: false, error: friendly(error) };
-    // With email confirmation ON, there is no session until the link is clicked.
-    return { ok: true, user: mapUser(data.user), needsConfirmation: !data.session };
+    const u = mapUser(data.user);
+    if (data.session && u) cacheUser(u);
+    return { ok: true, user: u, needsConfirmation: !data.session };
   }
-  const r = await local.createAccount((email || '').trim(), password); // email doubles as the local username
-  return r.ok ? { ok: true, user: { name: r.username, email: r.username } } : r;
+  const r = await local.createAccount((email || '').trim(), password);
+  if (r.ok) {
+    const u = { name: r.username, email: r.username };
+    cacheUser(u);
+    return { ok: true, user: u };
+  }
+  return r;
 }
 
 /** Sign in. Returns { ok, user?, error? }. */
 export async function signIn({ email, password }) {
   if (supabase) {
     const { data, error } = await supabase.auth.signInWithPassword({ email: (email || '').trim(), password });
-    if (error) return { ok: false, error: friendly(error) };
-    return { ok: true, user: mapUser(data.user) };
+    if (!error && data?.user) {
+      const u = mapUser(data.user);
+      cacheUser(u);
+      return { ok: true, user: u };
+    }
+    // Fallback: check device-local account
+    const loc = await local.login((email || '').trim(), password);
+    if (loc.ok) {
+      const u = { id: 'local-user', name: loc.username, email: loc.username };
+      cacheUser(u);
+      return { ok: true, user: u };
+    }
+    return { ok: false, error: friendly(error) };
   }
   const r = await local.login((email || '').trim(), password);
-  return r.ok ? { ok: true, user: { name: r.username, email: r.username } } : r;
+  if (r.ok) {
+    const u = { name: r.username, email: r.username };
+    cacheUser(u);
+    return { ok: true, user: u };
+  }
+  return r;
 }
 
 export async function signOut() {
-  if (supabase) { try { await supabase.auth.signOut(); } catch { /* ignore */ } return; }
+  cacheUser(null);
   local.logout();
+  if (supabase) { try { await supabase.auth.signOut(); } catch { /* ignore */ } }
 }
 
 /** Change the signed-in user's password (verifies the current one first). */
@@ -80,23 +119,42 @@ export async function changePassword(current, next) {
   return local.changePassword(current, next);
 }
 
-/** The current user (async — Supabase reads the persisted session). */
+/** The current user (async — checks Supabase, cached user, and local session). */
 export async function currentUser() {
   if (supabase) {
-    const { data } = await supabase.auth.getSession();
-    return mapUser(data.session?.user || null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const u = mapUser(data?.session?.user || null);
+      if (u) { cacheUser(u); return u; }
+    } catch { /* ignore */ }
   }
+  // If Supabase session is pending or offline, check cached user
+  const cached = getCachedUser();
+  if (cached && (cached.name || cached.email)) return cached;
+
+  // Fallback to local session
   const s = local.getSession();
-  return s ? { name: s.username, email: s.username } : null;
+  if (s?.username) return { id: 'local-user', name: s.username, email: s.username };
+
+  return null;
 }
 
 /**
- * Subscribe to auth changes. Calls cb(user|null) on sign-in/out/refresh.
- * Returns an unsubscribe function. No-op for the local backend.
+ * Subscribe to auth changes.
+ * Calls cb(user) on sign-in / refresh and cb(null) ONLY on explicit logout.
  */
 export function onAuthChange(cb) {
   if (supabase) {
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => cb(mapUser(session?.user || null)));
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        cacheUser(null);
+        cb(null);
+      } else if (session?.user) {
+        const u = mapUser(session.user);
+        cacheUser(u);
+        cb(u);
+      }
+    });
     return () => { try { data.subscription.unsubscribe(); } catch { /* ignore */ } };
   }
   return () => {};
