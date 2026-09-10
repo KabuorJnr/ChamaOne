@@ -252,18 +252,74 @@ export async function rejectPayment(paymentId, note = '') {
 /* ---------- join by code (SECURITY DEFINER RPC) ----------
  * Accepts either a member-specific invite code (claims that member row) or
  * the group-wide join code. Falls back to the older RPC on projects that
- * haven't run migration 0004 yet. */
+ * haven't run migration 0004 yet, AND tries a direct member-invite-code
+ * claim so per-member codes always work. */
 export async function joinGroupByCode(code) {
   if (!supabase) return { ok: false, error: 'No backend configured.' };
-  const p_code = (code || '').trim();
+  const p_code = (code || '').trim().toUpperCase();
+
+  // 1) Preferred path: the unified RPC that handles both code types.
   const { data, error } = await supabase.rpc('join_by_code', { p_code });
-  if (!error) return { ok: true, groupId: data };
-  if (/could not find|does not exist|schema cache/i.test(error.message)) {
-    const legacy = await supabase.rpc('join_group_by_code', { p_code });
-    if (!legacy.error) return { ok: true, groupId: legacy.data };
-    return { ok: false, error: legacy.error.message.replace(/^.*?:\s*/, '') };
+  if (!error && data) return { ok: true, groupId: data };
+
+  // 2) RPC missing (migration 0004 not applied) — try the legacy group-code RPC
+  //    AND a direct member-invite-code claim as a fallback.
+  const rpcMissing = error && /could not find|does not exist|schema cache/i.test(error.message);
+
+  if (rpcMissing || (error && /invalid invite code/i.test(error.message))) {
+    // 2a) Try the group-wide join code via the legacy RPC.
+    if (rpcMissing) {
+      const legacy = await supabase.rpc('join_group_by_code', { p_code });
+      if (!legacy.error && legacy.data) return { ok: true, groupId: legacy.data };
+    }
+
+    // 2b) Try claiming a member-specific invite code directly.
+    //     This covers the case where the RPC doesn't exist OR the RPC
+    //     couldn't find the code because of a data/migration mismatch.
+    const claimed = await claimMemberInvite(p_code);
+    if (claimed.ok) return claimed;
   }
-  return { ok: false, error: error.message.replace(/^.*?:\s*/, '') };
+
+  // 3) Surface the original error (or "Invalid invite code" from the RPC).
+  return { ok: false, error: (error?.message || 'Invalid invite code').replace(/^.*?:\s*/, '') };
+}
+
+/* Direct member invite code claim — used as a fallback when the unified RPC
+ * is unavailable. Finds the member row, checks it's unclaimed, links it to
+ * the current user, and returns the group id. */
+async function claimMemberInvite(code) {
+  try {
+    // Look up the member row by invite code (the column may not exist on
+    // very old schemas — the query will just return nothing).
+    const { data: rows } = await supabase
+      .from('group_members')
+      .select('id, group_id, user_id')
+      .eq('invite_code', code)
+      .neq('status', 'removed')
+      .limit(1);
+    const m = rows?.[0];
+    if (!m) return { ok: false };
+
+    // Already claimed by someone else?
+    const { data: me } = await supabase.auth.getUser();
+    const myId = me?.user?.id;
+    if (m.user_id && m.user_id !== myId) {
+      return { ok: false, error: 'That invite code has already been used.' };
+    }
+
+    // Claim the member row.
+    if (!m.user_id) {
+      const { error: uerr } = await supabase
+        .from('group_members')
+        .update({ user_id: myId, status: 'active' })
+        .eq('id', m.id);
+      if (uerr) return { ok: false, error: uerr.message };
+    }
+
+    return { ok: true, groupId: m.group_id };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /* ---------- realtime: reload the active group when anything changes ---------- */

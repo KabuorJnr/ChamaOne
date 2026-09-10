@@ -78,11 +78,14 @@ function blankGroup() {
 function ensure() {
   if (state) return state;
   // Remote mode: never seed demo data — the snapshot is hydrated from Supabase
-  // after sign-in (see hydrate()). Until then, hand back a safe blank.
+  // after sign-in (see hydrate()). Until then, hand back a safe blank WITHOUT
+  // storing it in the module-level `state` variable, so that a subsequent call
+  // after a successful joinGroup() / hydrate() can still overwrite state properly.
   if (REMOTE) {
     if (!root) root = { activeGroupId: null, groups: {} };
-    state = root.groups[root.activeGroupId] || blankGroup();
-    return state;
+    const s = root.groups[root.activeGroupId];
+    if (s) { state = s; return state; }
+    return blankGroup(); // transient placeholder — do NOT store in state
   }
   // Load the multi-group container.
   try { const raw = localStorage.getItem(KEY); if (raw) root = JSON.parse(raw); } catch { /* ignore */ }
@@ -193,7 +196,10 @@ export function listGroups() {
     active: g.group.id === root.activeGroupId,
   }));
 }
-export function groupCount() { ensure(); return Object.keys(root.groups).length; }
+export function groupCount() {
+  if (!root) ensure(); // initialise root if not yet done
+  return root ? Object.keys(root.groups).length : 0;
+}
 export function switchGroup(id) {
   ensure();
   if (root.groups[id]) { root.activeGroupId = id; state = root.groups[id]; emit(); if (REMOTE) startRealtime(); }
@@ -217,7 +223,12 @@ export const members = () => ensure().members.filter((m) => m.status !== 'remove
 export const memberById = (id) => ensure().members.find((m) => m.id === id);
 export const activeCycle = () => {
   const s = ensure();
-  return s.cycles.find((c) => c.id === s.group.activeCycleId) || s.cycles[s.cycles.length - 1];
+  return (
+    s.cycles.find((c) => c.id === s.group.activeCycleId) ||
+    s.cycles[s.cycles.length - 1] ||
+    // Fallback: synthesise a safe placeholder so callers never crash on cy.id
+    { id: s.group.activeCycleId || 'none', label: '—', startDate: new Date().toISOString(), endDate: new Date().toISOString() }
+  );
 };
 
 /* ---------- ledger (audit trail) ---------- */

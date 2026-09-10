@@ -82,8 +82,12 @@ export default function App() {
   }
 
   // Signed in — wait for the backend load, then onboard or run the app.
-  if (!hydrated) return <Splash />;
-  if (store.groupCount() === 0) return <MobileOnboard store={store} user={user} />;
+  // IMPORTANT: groupCount > 0 means a joinGroup() or createGroup() already
+  // succeeded — show the shell immediately regardless of the hydrated flag,
+  // which can lag behind due to Supabase auth-change events that reset it.
+  const gc = store.groupCount();
+  if (!hydrated && gc === 0) return <Splash />;
+  if (gc === 0) return <MobileOnboard store={store} user={user} />;
 
   return <MobileShell store={store} user={user} onLogout={onLogout} />;
 }

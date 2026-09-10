@@ -45,7 +45,7 @@ export default function MobileLanding({ onEnter }) {
         <div className="cha-auth-sheet" style={{ marginTop: -28 }}>
           <button className="cha-btn" onClick={install}><Download size={18} /> Install the app</button>
           <button className="cha-btn cha-btn-ghost" onClick={onEnter}>Open in browser <ArrowRight size={17} /></button>
-          <a className="cha-btn cha-btn-ghost" href="/ChamaOne.apk" download style={{ textDecoration: 'none' }}>🤖 Download Android APK (v1.1)</a>
+          <a className="cha-btn cha-btn-ghost" href="/ChamaOne.apk" download style={{ textDecoration: 'none' }}>🤖 Download Android APK (v11.1)</a>
 
           <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
             {FEATURES.map((f) => (

@@ -20,7 +20,8 @@ nothing breaks.
 **Option A — SQL editor (quickest):** open the Supabase dashboard → SQL
 editor and run each migration in order: `migrations/0001_init.sql`, then
 `migrations/0002_join_and_realtime.sql` (join codes, the self-join RPC,
-realtime), then `migrations/0003_payments.sql` (payment confirmation). Run
+realtime), `migrations/0003_payments.sql` (payment confirmation), and
+`migrations/0004_member_invites.sql` (per-member invite codes). Run
 only the ones you haven't applied yet.
 
 **Option B — Supabase CLI:**

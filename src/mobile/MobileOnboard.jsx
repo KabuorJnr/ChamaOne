@@ -22,10 +22,15 @@ export default function MobileOnboard({ store, user }) {
   const join = async () => {
     if (!code.trim()) { setErr('Enter an invite code'); return; }
     setErr(''); setBusy(true);
-    const r = await store.joinGroup(code.trim());
-    setBusy(false);
-    if (!r.ok) { setErr(r.error || 'Could not join'); return; }
-    // groupCount flips to 1 and App swaps to the shell automatically.
+    try {
+      const r = await store.joinGroup(code.trim());
+      if (!r.ok) { setErr(r.error || 'Could not join'); return; }
+      // groupCount flips to 1 and App swaps to the shell automatically.
+    } catch (e) {
+      setErr('Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const create = () => {
