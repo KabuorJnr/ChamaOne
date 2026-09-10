@@ -1,5 +1,5 @@
 import { Plus, UserPlus, Users, MessageCircle } from 'lucide-react';
-import { fmtKES, Avatar, RoleTag, StatusPill, useUI, Empty } from './kit';
+import { fmtKES, fmtDateTime, Avatar, RoleTag, StatusPill, useUI, Empty } from './kit';
 import { openAddMember, openCollect, openInvite } from './forms';
 
 export function MembersScreen({ store, open }) {
@@ -8,55 +8,58 @@ export function MembersScreen({ store, open }) {
   const ms = store.members();
   return (
     <>
+      <div className="cha-sec" style={{ margin: '0 2px 8px' }}>
+        <h5>{ms.length} {ms.length === 1 ? 'member' : 'members'}</h5>
+        {store.canManageMembers() && (
+          <button className="cha-chip2" onClick={() => openAddMember(ui, store)}>
+            <UserPlus size={13} /> Add member
+          </button>
+        )}
+      </div>
+
+      {ms.length === 0 && (
+        <Empty icon={Users} title="No members yet" text="Add the people in your Chama. Each person gets a card with their contributions, loans, and role." />
+      )}
+
       <div className="cha-list-card">
-        <div className="cha-li" style={{ cursor: 'default' }}>
-          <div className="cha-lt"><span>{ms.length} members · {cy.label}</span></div>
-          {store.canManageMembers() && <button className="cha-chip2" onClick={() => openAddMember(ui, store)}><Plus size={13} style={{ verticalAlign: '-2px' }} /> Add</button>}
-        </div>
         {ms.map((m) => {
           const st = store.memberStatus(m.id, cy.id);
           return (
             <button className="cha-li" key={m.id} onClick={() => open('member_detail', { id: m.id })}>
               <Avatar name={m.name} />
-              <div className="cha-lt">
-                <b>{m.name} <RoleTag role={m.role} /></b>
-                <span>{store.displayPhone(m.phone)}
-                  {!m.userId && <span className="cha-pill2 cha-pill-warn" style={{ marginLeft: 6 }}>Not joined</span>}
-                </span>
-              </div>
-              <div className="cha-rt">
+              <div className="cha-lt"><b>{m.name}</b><span>{m.phone ? store.displayPhone(m.phone) : 'No phone'}</span></div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                 <StatusPill state={st.state} />
-                <span className="cha-num" style={{ display: 'block', marginTop: 3 }}>{fmtKES(st.paid)}</span>
+                <RoleTag role={m.role} />
               </div>
             </button>
           );
         })}
       </div>
-      {ms.length === 0 && <Empty icon={Users} title="No members" text="Add members to start tracking contributions." />}
     </>
   );
 }
 
-export function MemberDetail({ store, params, back }) {
+export function MemberDetail({ store, id, params }) {
   const ui = useUI();
-  const { confirm, toast } = ui;
-  const m = store.memberById(params.id);
-  if (!m) return <Empty icon={Users} title="Not found" text="This member no longer exists." />;
-  const cy = store.activeCycle().id;
-  const st = store.memberStatus(m.id, cy);
-  const contribs = store.contributions.filter((c) => c.memberId === m.id).sort((a, b) => new Date(b.date) - new Date(a.date));
-  const total = contribs.reduce((t, c) => t + c.amount, 0);
+  const { toast, confirm, back } = ui;
+  const mid = id || params?.id;
+  const m = store.memberById(mid);
+  if (!m) return null;
+
+  const total = store.contributions.filter((c) => c.memberId === m.id).reduce((t, c) => t + c.amount, 0);
   const loans = store.loans.filter((l) => l.memberId === m.id);
+  const contribs = store.contributions.filter((c) => c.memberId === m.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+
   return (
     <>
-      <div className="cha-card">
-        <div className="cha-mp-head">
-          <Avatar name={m.name} size={56} />
-          <div><div className="cha-mp-name">{m.name} <RoleTag role={m.role} /></div>
-            <div className="cha-mp-phone">{store.displayPhone(m.phone)}</div></div>
+      <div className="cha-card cha-hero-sub">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Avatar name={m.name} size={48} />
+          <div><h3 style={{ margin: 0 }}>{m.name}</h3><span className="cha-muted cha-small">{m.phone ? store.displayPhone(m.phone) : 'No phone'}</span></div>
         </div>
-        <div className="cha-mp-stats">
-          <div><div className="k">This cycle</div><div className="v"><StatusPill state={st.state} /></div></div>
+        <div className="cha-mini-kpis" style={{ marginTop: 14 }}>
+          <div><div className="k">Role</div><div className="v"><RoleTag role={m.role} /></div></div>
           <div><div className="k">Lifetime</div><div className="v cha-num">{fmtKES(total)}</div></div>
           <div><div className="k">Loans</div><div className="v">{loans.length}</div></div>
         </div>
@@ -70,11 +73,16 @@ export function MemberDetail({ store, params, back }) {
 
       <div className="cha-card">
         <div className="cha-sec" style={{ margin: '0 0 6px' }}><h5>Recent contributions</h5></div>
-        {contribs.slice(0, 8).map((c) => (
-          <div className="cha-mrow" key={c.id}>
-            <span>{store.cycleLabel(c.cycleId)}</span>
+        {contribs.slice(0, 10).map((c) => (
+          <div className="cha-mrow" key={c.id} style={{ alignItems: 'flex-start' }}>
+            <div>
+              <b>{store.cycleLabel(c.cycleId)}</b>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                {fmtDateTime(c.date)}{c.ref ? ` · Ref: ${c.ref}` : ''}
+              </div>
+            </div>
             <span className="cap">{c.method}</span>
-            <span className="cha-num" style={{ fontWeight: 700 }}>{fmtKES(c.amount)}</span>
+            <span className="cha-num" style={{ fontWeight: 700, color: 'var(--good)' }}>+ {fmtKES(c.amount)}</span>
           </div>
         ))}
         {contribs.length === 0 && <div className="cha-muted cha-small">None yet.</div>}

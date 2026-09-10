@@ -247,11 +247,11 @@ export const activeCycle = () => {
 };
 
 /* ---------- ledger (audit trail) ---------- */
-function addLedgerEntry({ type, amount, direction, memberId, note, ref }) {
+function addLedgerEntry({ type, amount, direction, memberId, note, ref, date }) {
   const balBefore = poolBalance();
   const delta = direction === 'in' ? amount : -amount;
   const entry = {
-    id: uid('lx'), date: now(), type, amount, direction,
+    id: uid('lx'), date: date || now(), type, amount, direction,
     memberId: memberId || null, note: note || '', ref: ref || '',
     balanceAfter: balBefore + delta,
   };
@@ -384,12 +384,21 @@ export function setMemberRole(id, role) {
 }
 
 /* ---------- contributions ---------- */
-export function recordContribution({ memberId, amount, method, ref, cycleId }) {
+export function recordContribution({ memberId, amount, method, ref, cycleId, date }) {
   const cy = cycleId || activeCycle().id;
-  const c = { id: uid('cn'), memberId, cycleId: cy, amount: Number(amount), method: method || 'cash', ref: ref || '', status: 'confirmed', date: now() };
+  const timestamp = date || now();
+  const c = { id: uid('cn'), memberId, cycleId: cy, amount: Number(amount), method: method || 'cash', ref: ref || '', status: 'confirmed', date: timestamp };
   ensure().contributions.push(c);
   const m = memberById(memberId);
-  const lx = addLedgerEntry({ type: 'Contribution', amount: c.amount, direction: 'in', memberId, note: `${m ? m.name : 'Member'} — ${cycleLabel(cy)}`, ref: c.ref });
+  const lx = addLedgerEntry({
+    type: 'Contribution',
+    amount: c.amount,
+    direction: 'in',
+    memberId,
+    note: `${m ? m.name : 'Member'} — ${cycleLabel(cy)}${c.ref ? ` (Ref: ${c.ref})` : ''}`,
+    ref: c.ref,
+    date: timestamp,
+  });
   notify('money', `${m ? m.name : 'A member'} contributed ${fmtKES(c.amount)}.`);
   emit();
   if (REMOTE) { mirror(db.addContribution(state.group.id, c, recorder())); mirror(db.addLedger(state.group.id, lx)); }
@@ -432,11 +441,21 @@ export function memberStatus(memberId, cycleId) {
 export const pendingPayments = () => (ensure().payments || []).filter((p) => p.status === 'pending');
 
 // A member reports a payment they've made — awaiting officer confirmation.
-export function reportPayment({ amount, providerRef, note }) {
+export function reportPayment({ memberId, amount, providerRef, note }) {
   ensure();
-  const meId = myMemberId();
+  const meId = memberId || myMemberId();
   const me = memberById(meId);
-  const p = { id: uid(), memberId: meId, amount: Number(amount), phone: me?.phone || '', provider: 'manual', providerRef: providerRef || '', status: 'pending', note: note || '', createdAt: now() };
+  const p = {
+    id: uid(),
+    memberId: meId,
+    amount: Number(amount),
+    phone: me?.phone || '',
+    provider: 'mpesa',
+    providerRef: providerRef || '',
+    status: 'pending',
+    note: note || '',
+    createdAt: now(),
+  };
   state.payments = state.payments || [];
   state.payments.unshift(p);
   notify('money', `${me ? me.name : 'A member'} reported a ${fmtKES(p.amount)} payment — awaiting confirmation.`);
@@ -445,12 +464,26 @@ export function reportPayment({ amount, providerRef, note }) {
   return p;
 }
 
-// Officer confirms a reported payment → creates the contribution + ledger row.
+// Officer confirms a reported payment → creates the contribution + ledger row with exact timestamp.
 export async function confirmPayment(paymentId, memberId, cycleId) {
+  const confTime = now();
   if (!REMOTE) {
     const p = (ensure().payments || []).find((x) => x.id === paymentId);
-    if (p) { p.status = 'confirmed'; recordContribution({ memberId, amount: p.amount, method: 'mpesa', ref: p.providerRef, cycleId }); }
-    return { ok: true };
+    if (p) {
+      p.status = 'confirmed';
+      p.confirmedAt = confTime;
+      const targetMemberId = memberId || p.memberId;
+      const targetCycleId = cycleId || activeCycle().id;
+      recordContribution({
+        memberId: targetMemberId,
+        amount: p.amount,
+        method: 'mpesa',
+        ref: p.providerRef,
+        cycleId: targetCycleId,
+        date: confTime,
+      });
+    }
+    return { ok: true, confirmedAt: confTime };
   }
   const res = await dbConfirmPayment(paymentId, memberId, cycleId);
   if (res.ok) refreshActiveGroup();

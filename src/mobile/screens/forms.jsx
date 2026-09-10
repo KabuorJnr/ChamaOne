@@ -400,6 +400,8 @@ function CreateGroupForm({ store, close, open }) {
 
 /* ---- member: pay via *334# and notify treasurer ---- */
 function ReportPaymentForm({ store, close, ui }) {
+  const ms = store.members();
+  const [memberId, setMemberId] = useState(store.myMemberId() || ms[0]?.id || '');
   const [amt, setAmt] = useState(String(store.group.contributionAmount || ''));
   const [code, setCode] = useState('');
   const shortcode = store.settings?.shortcode;
@@ -423,15 +425,21 @@ function ReportPaymentForm({ store, close, ui }) {
       <div style={{ marginTop: 14 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', marginBottom: 4 }}>Step 2: Notify Treasurer to Record</div>
         <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
-          After paying, enter the M-Pesa transaction code so the treasurer can confirm and record it into your record.
+          Confirm your name and M-Pesa transaction code so the treasurer confirms and records your payment with the exact date & time.
         </p>
+
+        <label className="cha-field"><span>Contributor (Your Name)</span>
+          <select className="cha-select" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
+            {ms.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select></label>
+
         <label className="cha-field"><span>Amount (KES)</span>
           <input className="cha-input cha-num" type="number" value={amt} onChange={(e) => setAmt(e.target.value)} /></label>
         <label className="cha-field"><span>M-Pesa confirmation code</span>
           <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. RGH12ABC" /></label>
         <button className="cha-btn" onClick={() => {
           if (!Number(amt)) return ui.toast('Enter an amount');
-          store.reportPayment({ amount: amt, providerRef: code });
+          store.reportPayment({ memberId, amount: amt, providerRef: code });
           close(); ui.toast('Payment reported — the treasurer will confirm and record it');
         }}>Notify Treasurer</button>
       </div>

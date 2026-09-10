@@ -3,9 +3,9 @@ import {
   ThumbsUp, ThumbsDown, MinusCircle, Smartphone, Loader2, CheckCircle2, XCircle, Info,
   Wallet, CreditCard, Vote, UserPlus, RefreshCw, Sparkles, Bell, X,
 } from 'lucide-react';
-import { fmtKES } from '../../store/chama';
+import { fmtKES, fmtDateTime } from '../../store/chama';
 
-export { fmtKES };
+export { fmtKES, fmtDateTime };
 
 /* ---------- vote label: lucide icon + count (yes/no/abstain) ---------- */
 const VOTE = { yes: [ThumbsUp, 'cha-v-yes'], no: [ThumbsDown, 'cha-v-no'], ab: [MinusCircle, 'cha-v-ab'] };
