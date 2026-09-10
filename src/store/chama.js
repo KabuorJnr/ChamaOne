@@ -10,7 +10,8 @@
  * ===================================================================== */
 import { useSyncExternalStore } from 'react';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment } from '../lib/db';
+import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, requestToJoinGroup as dbRequestToJoin, approveJoinRequest as dbApproveJoin, subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment } from '../lib/db';
+import { extractJoinCode, makeInviteLink } from '../lib/invite';
 
 // v3 drops any previously-seeded demo data still sitting in localStorage.
 const KEY = 'chamaone.state.v3';
@@ -219,9 +220,11 @@ export function stopRealtime() {
   clearTimeout(rtTimer);
 }
 
-/* ---------- join a group by code ---------- */
-export async function joinGroup(code) {
+/* ---------- join a group by code or link ---------- */
+export async function joinGroup(codeOrLink) {
   if (!REMOTE) return { ok: false, error: 'Joining a group needs the online backend.' };
+  const code = extractJoinCode(codeOrLink);
+  if (!code) return { ok: false, error: 'Enter a valid invite code or link.' };
   const res = await joinGroupByCode(code);
   if (!res.ok) return res;
   const gs = await loadGroupState(res.groupId);
@@ -235,6 +238,41 @@ export async function joinGroup(code) {
   startRealtime();
   return { ok: true, name: gs.group.name };
 }
+
+/* ---------- request to join a group ---------- */
+export async function requestToJoin(codeOrLink, note = '') {
+  if (!REMOTE) return { ok: false, error: 'Joining a group needs the online backend.' };
+  const code = extractJoinCode(codeOrLink);
+  if (!code) return { ok: false, error: 'Enter a valid invite code or link.' };
+  const res = await dbRequestToJoin(code, note);
+  if (!res.ok) return res;
+  if (res.groupId) {
+    const gs = await loadGroupState(res.groupId);
+    if (gs) {
+      gs.currentUserId = currentUser?.id;
+      ensure();
+      root.groups[res.groupId] = gs;
+      root.activeGroupId = res.groupId;
+      state = gs;
+      emit();
+      startRealtime();
+    }
+  }
+  return res;
+}
+
+export async function approveMember(memberId) {
+  const m = memberById(memberId);
+  if (!m) return { ok: false, error: 'Member not found' };
+  m.status = 'active';
+  emit();
+  if (REMOTE) mirror(dbApproveJoin(memberId));
+  notify('member', `${m.name} was approved and is now an active member.`);
+  return { ok: true };
+}
+
+export const pendingRequests = () => (ensure().members || []).filter((m) => m.status === 'inactive');
+
 
 /* ---------- multiple groups ---------- */
 export function listGroups() {
@@ -872,7 +910,8 @@ export function wipe() {
  * EduOne's `store` prop shape. Re-renders subscribers on every emit().
  * ===================================================================== */
 const actions = {
-  createGroup, joinGroup, listGroups, groupCount, switchGroup, deleteGroup,
+  createGroup, joinGroup, requestToJoin, approveMember, pendingRequests, makeInviteLink,
+  listGroups, groupCount, switchGroup, deleteGroup,
   startNextCycle, updateGroup, updateSettings,
   addMember, removeMember, setMemberRole,
   recordContribution, contributionsForCycle, memberCycleTotal, cycleStats, memberStatus, cycleLabel,

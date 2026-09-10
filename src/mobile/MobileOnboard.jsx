@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowRight, ShieldAlert } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { Logo } from '../App';
 import { isSupabaseConfigured } from '../lib/supabase';
 import './mobile.css';
@@ -15,17 +15,49 @@ export default function MobileOnboard({ store, user }) {
   const [phone, setPhone] = useState('');
   const [mem, setMem] = useState('');
   const [err, setErr] = useState('');
+  const [info, setInfo] = useState('');
   const [mode, setMode] = useState('create');   // 'create' | 'join'
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Auto-fill from invite link if present in storage
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem('chamaone.pending_join');
+      if (pending) {
+        setCode(pending);
+        setMode('join');
+      }
+    } catch {}
+  }, []);
+
   const join = async () => {
-    if (!code.trim()) { setErr('Enter an invite code'); return; }
-    setErr(''); setBusy(true);
+    if (!code.trim()) { setErr('Enter an invite code or paste a join link'); return; }
+    setErr(''); setInfo(''); setBusy(true);
     try {
       const r = await store.joinGroup(code.trim());
       if (!r.ok) { setErr(r.error || 'Could not join'); return; }
+      try { localStorage.removeItem('chamaone.pending_join'); } catch {}
       // groupCount flips to 1 and App swaps to the shell automatically.
+    } catch (e) {
+      setErr('Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRequest = async () => {
+    if (!code.trim()) { setErr('Enter an invite code or paste a join link'); return; }
+    setErr(''); setInfo(''); setBusy(true);
+    try {
+      const r = await store.requestToJoin(code.trim());
+      if (!r.ok) { setErr(r.error || 'Could not send request'); return; }
+      try { localStorage.removeItem('chamaone.pending_join'); } catch {}
+      if (r.status === 'already_member') {
+        setInfo(`You are already a member of ${r.name}! Redirecting…`);
+      } else {
+        setInfo(`Join request submitted to ${r.name || 'the Chama'}! An officer will approve you shortly.`);
+      }
     } catch (e) {
       setErr('Something went wrong. Please try again.');
     } finally {
@@ -53,26 +85,28 @@ export default function MobileOnboard({ store, user }) {
           <div className="cha-auth-center">
             <Logo className="cha-logo" />
             <div className="cha-auth-brand">{mode === 'create' ? 'Create your Chama' : 'Join a Chama'}</div>
-            <div className="cha-auth-tag">{mode === 'create' ? 'Set up in under a minute — you’ll be the Chairperson' : 'Enter the invite code your Chairperson shared'}</div>
+            <div className="cha-auth-tag">{mode === 'create' ? 'Set up in under a minute — you’ll be the Chairperson' : 'Paste an invite link or enter the code shared with you'}</div>
           </div>
         </div>
 
         <div className="cha-auth-sheet">
           {isSupabaseConfigured && (
             <div className="cha-btn-row" style={{ marginBottom: 12 }}>
-              <button className={`cha-btn cha-btn-sm ${mode === 'create' ? '' : 'cha-btn-ghost'}`} onClick={() => { setMode('create'); setErr(''); }}>Create</button>
-              <button className={`cha-btn cha-btn-sm ${mode === 'join' ? '' : 'cha-btn-ghost'}`} onClick={() => { setMode('join'); setErr(''); }}>Join with code</button>
+              <button className={`cha-btn cha-btn-sm ${mode === 'create' ? '' : 'cha-btn-ghost'}`} onClick={() => { setMode('create'); setErr(''); setInfo(''); }}>Create Chama</button>
+              <button className={`cha-btn cha-btn-sm ${mode === 'join' ? '' : 'cha-btn-ghost'}`} onClick={() => { setMode('join'); setErr(''); setInfo(''); }}>Join with Link / Code</button>
             </div>
           )}
 
           {err && <div className="cha-auth-err"><ShieldAlert size={18} /> {err}</div>}
+          {info && <div className="cha-card" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', marginBottom: 12, padding: 12, fontSize: 13, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 8 }}><CheckCircle2 size={18} color="#059669" /> {info}</div>}
 
           {mode === 'join' ? (
             <>
-              <label className="cha-field"><span>Invite code</span>
-                <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                  placeholder="e.g. 7QK2M9" maxLength={8} style={{ fontFamily: 'monospace', letterSpacing: 3, fontSize: 20, textAlign: 'center' }} /></label>
-              <button className="cha-btn" onClick={join} disabled={busy} style={{ marginTop: 4 }}>{busy ? 'Joining…' : <>Join group <ArrowRight size={18} /></>}</button>
+              <label className="cha-field"><span>Invite link or code</span>
+                <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value)}
+                  placeholder="Paste https://… or enter code" style={{ fontSize: 15 }} /></label>
+              <button className="cha-btn" onClick={join} disabled={busy} style={{ marginTop: 4 }}>{busy ? 'Joining…' : <>Join group now <ArrowRight size={18} /></>}</button>
+              <button className="cha-btn cha-btn-ghost" onClick={handleRequest} disabled={busy} style={{ marginTop: 8 }}>Request to join</button>
             </>
           ) : (
             <>

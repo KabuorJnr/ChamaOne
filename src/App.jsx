@@ -40,6 +40,22 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [entered, setEntered] = useState(isInstalledApp()); // installed app skips the landing
+  const [joinToast, setJoinToast] = useState(null);
+
+  // Check URL query parameters for ?join= or ?code= or ?invite=
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const joinParam = params.get('join') || params.get('code') || params.get('invite');
+      if (joinParam) {
+        const code = joinParam.trim().toUpperCase();
+        localStorage.setItem('chamaone.pending_join', code);
+        setEntered(true);
+        try { sessionStorage.setItem('chamaone.entered', 'true'); } catch {}
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch {}
+  }, []);
 
   // Resolve the current session on cold start, then keep it in sync with
   // Supabase auth changes (sign-in/out/token refresh across devices).
@@ -70,6 +86,32 @@ export default function App() {
     }
     return () => { alive = false; };
   }, [account?.id]);
+
+  // Auto-fulfill pending join link after user is authenticated & hydrated
+  useEffect(() => {
+    if (account && hydrated) {
+      try {
+        const pending = localStorage.getItem('chamaone.pending_join');
+        if (pending) {
+          localStorage.removeItem('chamaone.pending_join');
+          store.joinGroup(pending).then((res) => {
+            if (res.ok) {
+              setJoinToast(`Joined ${res.name}! Welcome to your Chama.`);
+            } else {
+              setJoinToast(res.error || 'Could not join with that link.');
+            }
+          });
+        }
+      } catch {}
+    }
+  }, [account?.id, hydrated]);
+
+  useEffect(() => {
+    if (joinToast) {
+      const timer = setTimeout(() => setJoinToast(null), 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [joinToast]);
 
   useEffect(() => {
     const t = setTimeout(() => setSplash(false), 1400);
@@ -102,6 +144,17 @@ export default function App() {
   return (
     <>
       <UpdateBanner />
+      {joinToast && (
+        <div style={{
+          position: 'fixed', bottom: 84, left: 16, right: 16, zIndex: 9999,
+          background: '#0f172a', color: '#fff', padding: '14px 18px', borderRadius: 16,
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', fontSize: 13, fontWeight: 600
+        }}>
+          <span>{joinToast}</span>
+          <button onClick={() => setJoinToast(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 16, cursor: 'pointer', padding: '0 0 0 12px' }}>✕</button>
+        </div>
+      )}
       {screen}
     </>
   );

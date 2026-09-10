@@ -107,11 +107,14 @@ const rowToGroup = (r) => ({
 
 /* ---------- read: which groups am I in ---------- */
 export async function fetchGroups(userId) {
-  if (!supabase) return [];
-  const { data: mships, error } = await supabase
-    .from('group_members').select('group_id').eq('user_id', userId).neq('status', 'removed');
-  if (error) { console.error('[db] fetchGroups memberships', error.message); return []; }
-  const ids = [...new Set((mships || []).map((m) => m.group_id))];
+  if (!supabase || !userId) return [];
+  const [mshipsRes, createdRes] = await Promise.all([
+    supabase.from('group_members').select('group_id').eq('user_id', userId).neq('status', 'removed'),
+    supabase.from('groups').select('id').eq('created_by', userId),
+  ]);
+  const memGroupIds = (mshipsRes.data || []).map((m) => m.group_id);
+  const createdGroupIds = (createdRes.data || []).map((g) => g.id);
+  const ids = [...new Set([...memGroupIds, ...createdGroupIds])];
   if (!ids.length) return [];
   const { data: groups, error: gerr } = await supabase.from('groups').select('id').in('id', ids);
   if (gerr) { console.error('[db] fetchGroups groups', gerr.message); return []; }
@@ -187,12 +190,43 @@ export async function loadGroupState(groupId) {
 /* ---------- create a whole group (creator + roster + first cycle) ---------- */
 export async function createGroupRemote(g, userId) {
   if (!supabase) return { error: null };
-  const { error: gerr } = await ins('groups', groupToRow(g.group, userId));
-  if (gerr) return { error: gerr };
-  // Creator membership first (unlocks officer policies), then the rest.
   const creator = g.members[0];
-  await ins('group_members', memberToRow(g.group.id, creator));
   const rest = g.members.slice(1);
+
+  // 1) Try atomic SECURITY DEFINER RPC first
+  try {
+    const { data, error } = await supabase.rpc('create_chama_group', {
+      p_group: groupToRow(g.group, userId),
+      p_creator: creator ? memberToRow(g.group.id, creator) : {},
+      p_members: rest.map((m) => memberToRow(g.group.id, m)),
+      p_cycles: g.cycles.map((c) => cycleToRow(g.group.id, c)),
+    });
+    if (!error && data?.ok) return { error: null };
+  } catch { /* RPC not present yet, fallback below */ }
+
+  // 2) Fallback: direct table operations with join_by_code self-claim to bypass RLS recursion
+  const { error: gerr } = await ins('groups', groupToRow(g.group, userId));
+  if (gerr && !gerr.message?.includes('duplicate key')) {
+    console.error('[db] createGroupRemote groups error:', gerr);
+    return { error: gerr };
+  }
+
+  // Ensure creator is in group_members:
+  // First try direct insert, then join_by_code if RLS blocks direct creator insert
+  if (creator) {
+    const { error: merr } = await ins('group_members', memberToRow(g.group.id, creator));
+    if (merr && g.group.joinCode) {
+      // Direct insert blocked by RLS circular dependency; self-join via SECURITY DEFINER join_by_code
+      const jres = await supabase.rpc('join_by_code', { p_code: g.group.joinCode });
+      if (!jres.error) {
+        await supabase.from('group_members')
+          .update({ role: 'Chairperson', name: creator.name, phone: creator.phone || '' })
+          .eq('group_id', g.group.id).eq('user_id', userId);
+      }
+    }
+  }
+
+  // Insert rest of members and cycles now that creator is established
   if (rest.length) await ins('group_members', rest.map((m) => memberToRow(g.group.id, m)));
   if (g.cycles.length) await ins('cycles', g.cycles.map((c) => cycleToRow(g.group.id, c)));
   await upd('groups', g.group.id, { active_cycle_id: g.group.activeCycleId });
@@ -322,6 +356,33 @@ async function claimMemberInvite(code) {
   } catch {
     return { ok: false };
   }
+}
+
+/* ---------- request to join / approve request ---------- */
+export async function requestToJoinGroup(code, note = '') {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const p_code = (code || '').trim().toUpperCase();
+
+  try {
+    const { data, error } = await supabase.rpc('request_to_join', { p_code, p_note: note });
+    if (!error && data) return data;
+  } catch {}
+
+  // Fallback: join directly via join_by_code
+  return joinGroupByCode(p_code);
+}
+
+export async function approveJoinRequest(memberId) {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  try {
+    const { data, error } = await supabase.rpc('approve_join_request', { p_member_id: memberId });
+    if (!error && data?.ok) return { ok: true };
+  } catch {}
+
+  // Fallback: direct update
+  const { error } = await supabase.from('group_members').update({ status: 'active' }).eq('id', memberId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 /* ---------- realtime: reload the active group when anything changes ---------- */

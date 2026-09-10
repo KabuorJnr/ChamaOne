@@ -6,7 +6,7 @@ import { parseMpesaSms } from '../../lib/mpesaParser';
 import { scheduleAt } from '../../lib/notifications';
 import { changePassword } from '../../lib/account';
 import { isSupabaseConfigured } from '../../lib/supabase';
-import { whatsappInviteUrl } from '../../lib/invite';
+import { whatsappInviteUrl, makeInviteLink } from '../../lib/invite';
 
 /* ---- open helpers (call from any screen with the UI ctx) ---- */
 export const openCollect = (ui, store, memberId) =>
@@ -151,24 +151,28 @@ function InvitePanel({ store, member, close }) {
   const { toast } = useUI();
   const code = member?.inviteCode || '';
   const wa = whatsappInviteUrl({ phone: member?.phone, groupName: store.group.name, memberName: member?.name, code });
-  const copy = () => {
+  const copyLink = () => {
+    const link = makeInviteLink(code);
+    try { navigator.clipboard?.writeText(link); toast('Invite link copied'); } catch { toast(link); }
+  };
+  const copyCode = () => {
     try { navigator.clipboard?.writeText(code); toast('Invite code copied'); } catch { toast(code); }
   };
   return (
     <>
       <p className="cha-muted cha-small" style={{ marginTop: 0 }}>
-        <b style={{ color: 'var(--ink)' }}>{member.name}</b> is on the roster. Send them this code — they create their own
-        account (name + password), enter the code, and they&apos;re in.
+        <b style={{ color: 'var(--ink)' }}>{member.name}</b> is on the roster. Send them the join link via WhatsApp. When clicked, they join immediately without typing any code.
       </p>
       <div style={{ background: 'var(--blue-50)', border: '1px solid var(--line)', borderRadius: 14, padding: 16, textAlign: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--muted)' }}>INVITE CODE</div>
         <div className="cha-num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: 6, color: 'var(--blue-deep)', marginTop: 4 }}>{code}</div>
       </div>
-      <a className="cha-btn" href={wa} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+      <a className="cha-btn" href={wa} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
         <MessageCircle size={18} /> Send on WhatsApp
       </a>
-      <button className="cha-btn cha-btn-ghost" onClick={copy}><Copy size={16} /> Copy code</button>
-      <button className="cha-btn cha-btn-ghost" onClick={close}>Done</button>
+      <button className="cha-btn cha-btn-ghost" onClick={copyLink} style={{ marginTop: 8 }}><Copy size={16} /> Copy invite link</button>
+      <button className="cha-btn cha-btn-ghost" onClick={copyCode} style={{ marginTop: 4, fontSize: 12 }}><Copy size={14} /> Copy code only ({code})</button>
+      <button className="cha-btn cha-btn-ghost" onClick={close} style={{ marginTop: 4 }}>Done</button>
     </>
   );
 }
@@ -333,20 +337,47 @@ function JoinBox({ store, close, open, ui }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const join = async () => {
-    if (!code.trim()) return ui.toast('Enter an invite code');
+    if (!code.trim()) return ui.toast('Enter an invite code or paste a link');
     setBusy(true);
     const r = await store.joinGroup(code.trim());
     setBusy(false);
     if (!r.ok) return ui.toast(r.error || 'Could not join');
     close(); open && open('home'); ui.toast(`Joined ${r.name}`);
   };
+
+  const request = async () => {
+    if (!code.trim()) return ui.toast('Enter an invite code or paste a link');
+    setBusy(true);
+    const r = await store.requestToJoin(code.trim());
+    setBusy(false);
+    if (!r.ok) return ui.toast(r.error || 'Could not send request');
+    close();
+    if (r.status === 'already_member') {
+      open && open('home'); ui.toast(`You are already in ${r.name}!`);
+    } else {
+      ui.toast(`Join request submitted to ${r.name || 'the Chama'}!`);
+    }
+  };
+
   return (
     <div style={{ marginTop: 14 }}>
-      <p className="cha-muted cha-small">Have an invite code? Join a Chama:</p>
-      <div className="cha-grid2" style={{ gridTemplateColumns: '1fr auto', gap: 8 }}>
-        <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-          placeholder="e.g. 7QK2M9" style={{ fontFamily: 'monospace', letterSpacing: 2 }} maxLength={8} />
-        <button className="cha-btn cha-btn-sm" onClick={join} disabled={busy} style={{ whiteSpace: 'nowrap' }}>{busy ? '…' : 'Join'}</button>
+      <p className="cha-muted cha-small">Have an invite link or code? Join a Chama:</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <input
+          className="cha-input"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="Paste invite link or enter code"
+          style={{ fontSize: 14 }}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <button className="cha-btn" onClick={join} disabled={busy} style={{ background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff' }}>
+            {busy ? '…' : 'Join group'}
+          </button>
+          <button className="cha-btn cha-btn-ghost" onClick={request} disabled={busy}>
+            Request to join
+          </button>
+        </div>
       </div>
     </div>
   );
