@@ -125,6 +125,41 @@ export async function hydrate(user) {
     const gs = await loadGroupState(g.id);
     if (gs) { gs.currentUserId = currentUser?.id; states[g.id] = gs; }
   }
+
+  // If user has no groups in Supabase, check if they created a group locally while offline
+  // and migrate it to Supabase so their members and codes sync across devices.
+  if (Object.keys(states).length === 0 && currentUser?.id) {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const localRoot = JSON.parse(raw);
+        if (localRoot?.groups && Object.keys(localRoot.groups).length > 0) {
+          for (const localId of Object.keys(localRoot.groups)) {
+            const lg = localRoot.groups[localId];
+            if (lg?.group?.name && Array.isArray(lg?.members) && lg.members.length > 0) {
+              if (lg.members[0]) lg.members[0].userId = currentUser.id;
+              if (!lg.group.joinCode) lg.group.joinCode = genCode();
+              lg.members.forEach((m) => { if (!m.inviteCode) m.inviteCode = genCode(); });
+              const { error: merr } = await createGroupRemote(lg, currentUser.id);
+              if (!merr) {
+                for (const c of (lg.contributions || [])) await db.addContribution(lg.group.id, c, currentUser.id);
+                for (const l of (lg.loans || [])) await db.addLoan(lg.group.id, l);
+                for (const led of (lg.ledger || [])) await db.addLedger(lg.group.id, led);
+                const remoteState = await loadGroupState(lg.group.id);
+                if (remoteState) {
+                  remoteState.currentUserId = currentUser.id;
+                  states[lg.group.id] = remoteState;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[hydrate] Migration of local group to Supabase failed:', e);
+    }
+  }
+
   root = { activeGroupId: Object.keys(states)[0] || null, groups: states };
   state = root.groups[root.activeGroupId] || null;
   version++; listeners.forEach((fn) => fn());

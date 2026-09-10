@@ -1,4 +1,4 @@
-import { Plus, UserPlus, Users, MessageCircle } from 'lucide-react';
+import { Plus, UserPlus, Users, MessageCircle, Copy } from 'lucide-react';
 import { fmtKES, fmtDateTime, Avatar, RoleTag, StatusPill, useUI, Empty } from './kit';
 import { openAddMember, openCollect, openInvite } from './forms';
 
@@ -6,8 +6,31 @@ export function MembersScreen({ store, open }) {
   const ui = useUI();
   const cy = store.activeCycle();
   const ms = store.members();
+  const joinCode = store.group?.joinCode;
+
+  const copyCode = () => {
+    try { navigator.clipboard?.writeText(joinCode); ui.toast('Join code copied'); } catch { ui.toast(joinCode); }
+  };
+
   return (
     <>
+      {joinCode && store.canManageMembers() && (
+        <div className="cha-card" style={{ margin: '0 2px 12px', padding: '12px 14px', background: 'var(--blue-50)', border: '1px solid var(--blue-100)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', color: 'var(--blue-deep)' }}>CHAMA JOIN CODE</div>
+              <div className="cha-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: 4, color: 'var(--blue-deep)', marginTop: 2 }}>{joinCode}</div>
+            </div>
+            <button className="cha-chip2" onClick={copyCode} style={{ background: '#fff' }}>
+              <Copy size={13} /> Copy
+            </button>
+          </div>
+          <div className="cha-muted cha-small" style={{ marginTop: 4, fontSize: 11 }}>
+            New members enter this code to join <b>{store.group.name}</b>.
+          </div>
+        </div>
+      )}
+
       <div className="cha-sec" style={{ margin: '0 2px 8px' }}>
         <h5>{ms.length} {ms.length === 1 ? 'member' : 'members'}</h5>
         {store.canManageMembers() && (

@@ -5,6 +5,7 @@ ios/
 .env
 .env.*
 !.env.example
+!.env.production
 
 # Build outputs & logs (keep source only)
 *.apk

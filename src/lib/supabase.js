@@ -11,8 +11,11 @@
  * ===================================================================== */
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const DEFAULT_SUPABASE_URL = 'https://kskswlecmwcbnhuskyhi.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtza3N3bGVjbXdjYm5odXNreWhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5Mzc3ODksImV4cCI6MjEwNDUxMzc4OX0.vGD8AWZs8ShLNCnHdXkixDQJtD4k9jierMOfNo17YBA';
+
+const url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
 /** True when a Supabase project is configured for this build. */
 export const isSupabaseConfigured = Boolean(url && anonKey);

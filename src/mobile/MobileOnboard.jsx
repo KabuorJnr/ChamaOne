@@ -70,7 +70,7 @@ export default function MobileOnboard({ store, user }) {
           {mode === 'join' ? (
             <>
               <label className="cha-field"><span>Invite code</span>
-                <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+                <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                   placeholder="e.g. 7QK2M9" maxLength={8} style={{ fontFamily: 'monospace', letterSpacing: 3, fontSize: 20, textAlign: 'center' }} /></label>
               <button className="cha-btn" onClick={join} disabled={busy} style={{ marginTop: 4 }}>{busy ? 'Joining…' : <>Join group <ArrowRight size={18} /></>}</button>
             </>

@@ -344,7 +344,7 @@ function JoinBox({ store, close, open, ui }) {
     <div style={{ marginTop: 14 }}>
       <p className="cha-muted cha-small">Have an invite code? Join a Chama:</p>
       <div className="cha-grid2" style={{ gridTemplateColumns: '1fr auto', gap: 8 }}>
-        <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+        <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
           placeholder="e.g. 7QK2M9" style={{ fontFamily: 'monospace', letterSpacing: 2 }} maxLength={8} />
         <button className="cha-btn cha-btn-sm" onClick={join} disabled={busy} style={{ whiteSpace: 'nowrap' }}>{busy ? '…' : 'Join'}</button>
       </div>
