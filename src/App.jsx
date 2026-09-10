@@ -102,7 +102,10 @@ function UpdateBanner() {
     // 1) Check remote version.json
     const checkVersion = async () => {
       try {
-        const res = await fetch(`/version.json?_t=${Date.now()}`, { cache: 'no-store' });
+        const url = isNative()
+          ? `https://chama-one-ten.vercel.app/version.json?_t=${Date.now()}`
+          : `/version.json?_t=${Date.now()}`;
+        const res = await fetch(url, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data?.version && data.version !== currentVersion) {
