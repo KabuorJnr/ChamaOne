@@ -421,3 +421,41 @@ html.platform-android .cha-m { --safe-top: env(safe-area-inset-top, 0px); }
 .cha-header .cha-schead { position: static; background: none; padding: 0; }
 .cha-scroll { padding-top: 16px; }          /* the header owns --safe-top now */
 .cha-np { top: calc(74px + var(--safe-top)); }
+
+/* ============ Coin-drop loading intro (GSAP) ============ */
+.cha-intro {
+  position: fixed; inset: 0; z-index: 4000;
+  display: grid; place-items: center;
+  background: radial-gradient(120% 90% at 50% 20%, #1E3A8A 0%, #0F172A 55%, #0B1120 100%);
+  overflow: hidden;
+}
+.cha-intro-stage { perspective: 900px; }
+.cha-coin3d {
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 16px 32px rgba(0,0,0,.4));
+}
+.cha-coin-svg { display: block; }
+.cha-coin-shadow {
+  position: absolute; bottom: 26%; left: 50%; width: 140px; height: 22px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 70%);
+  border-radius: 50%; filter: blur(2px);
+}
+.cha-intro-word {
+  position: absolute; bottom: 20%; left: 0; right: 0; text-align: center;
+  color: #E8EEFB; font-size: 15px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; opacity: .8;
+}
+
+/* Particle-text brand sits where the static wordmark used to be. */
+.cha-auth-brand-canvas { margin: 6px auto 2px; max-width: 300px; }
+
+/* Fail-safe reveal for the auth screen. Transform-only (no opacity) so the
+   login form can NEVER be stuck invisible — worst case it sits a few px off,
+   still fully readable. The fade is layered separately and also ends visible. */
+@keyframes chaRise { from { transform: translateY(18px); } to { transform: none; } }
+.cha-reveal { animation: chaRise .55s cubic-bezier(.22,.61,.36,1) both; }
+.cha-reveal-2 { animation-delay: .1s; }
+@media (prefers-reduced-motion: reduce) {
+  .cha-reveal, .cha-reveal-2 { animation: none; }
+}

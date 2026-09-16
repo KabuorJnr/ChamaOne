@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { User, Lock, Mail, Phone, Eye, EyeOff, ArrowRight, ShieldAlert, MailCheck } from 'lucide-react';
 import { Logo } from '../App';
+import CoinIntro from './CoinIntro';
+import ParticleText from './ParticleText';
 import { signUp, signIn, authMode } from '../lib/account';
 import { normalizePhone } from '../store/chama';
 import './mobile.css';
@@ -18,6 +20,11 @@ export default function MobileAuth({ onAuthed }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  // The coin-drop intro plays once, then the login page is revealed. Skip it on
+  // subsequent mounts in the same session so it doesn't replay on every toggle.
+  const [introDone, setIntroDone] = useState(() => {
+    try { return sessionStorage.getItem('chamaone.intro') === '1'; } catch { return false; }
+  });
 
   const local = authMode === 'local';
 
@@ -50,18 +57,24 @@ export default function MobileAuth({ onAuthed }) {
 
   return (
     <div className="cha-m">
+      {!introDone && (
+        <CoinIntro onDone={() => {
+          setIntroDone(true);
+          try { sessionStorage.setItem('chamaone.intro', '1'); } catch {}
+        }} />
+      )}
       <div className="cha-auth">
-        <div className="cha-auth-hero">
+        <div className="cha-auth-hero cha-reveal">
           <span className="cha-auth-halo" style={{ width: 230, height: 230, right: -80, top: -90 }} />
           <span className="cha-auth-halo" style={{ width: 150, height: 150, left: -40, top: 70, opacity: 0.12 }} />
           <div className="cha-auth-center">
             <Logo className="cha-logo" />
-            <div className="cha-auth-brand">ChamaOne</div>
+            <ParticleText text="ChamaOne" className="cha-auth-brand-canvas" height={54} />
             <div className="cha-auth-tag">Your Chama, in your pocket</div>
           </div>
         </div>
 
-        <form className="cha-auth-sheet" onSubmit={submit}>
+        <form className="cha-auth-sheet cha-reveal cha-reveal-2" onSubmit={submit}>
           <div className="cha-auth-head">
             <h3>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h3>
             <p>{mode === 'signup' ? 'Sign up to run your Chama and sync with members.' : 'Sign in to continue.'}</p>

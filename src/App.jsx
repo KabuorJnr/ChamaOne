@@ -41,6 +41,10 @@ export default function App() {
   const [hydrated, setHydrated] = useState(false);
   const [entered, setEntered] = useState(isInstalledApp()); // installed app skips the landing
   const [joinToast, setJoinToast] = useState(null);
+  // Bumped on each Supabase auth event so hydrate re-runs once the session is
+  // truly live — fixes data vanishing on refresh when the first hydrate raced
+  // ahead of session restore.
+  const [authEpoch, setAuthEpoch] = useState(0);
 
   // Check URL query parameters for ?join= or ?code= or ?invite=
   useEffect(() => {
@@ -68,7 +72,7 @@ export default function App() {
     const unsub = onAuthChange((u) => {
       if (alive) {
         setAccount(u);
-        if (u) setAuthReady(true);
+        if (u) { setAuthReady(true); setAuthEpoch((e) => e + 1); }
       }
     });
     return () => { alive = false; unsub(); };
@@ -78,14 +82,13 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     if (account) {
-      setHydrated(false);
       setCurrentUser(account);
       hydrate(account).finally(() => { if (alive) setHydrated(true); });
     } else {
       setHydrated(false);
     }
     return () => { alive = false; };
-  }, [account?.id]);
+  }, [account?.id, authEpoch]);
 
   // Auto-fulfill pending join link after user is authenticated & hydrated
   useEffect(() => {
@@ -114,7 +117,9 @@ export default function App() {
   }, [joinToast]);
 
   useEffect(() => {
-    const t = setTimeout(() => setSplash(false), 1400);
+    // Kept short: the login flow has its own branded coin-drop intro
+    // (CoinIntro), so this only covers the initial session check.
+    const t = setTimeout(() => setSplash(false), 500);
     return () => clearTimeout(t);
   }, []);
 

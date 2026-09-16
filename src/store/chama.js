@@ -9,7 +9,7 @@
  * save()/load() change — screens only ever read state + call actions.
  * ===================================================================== */
 import { useSyncExternalStore } from 'react';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, requestToJoinGroup as dbRequestToJoin, approveJoinRequest as dbApproveJoin, subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment } from '../lib/db';
 import { extractJoinCode, makeInviteLink } from '../lib/invite';
 
@@ -120,6 +120,15 @@ function ensure() {
 export async function hydrate(user) {
   if (user) currentUser = user;
   if (!REMOTE) { ensure(); return groupCount(); }
+  // Guard against the Supabase SPA data-loss race: on a refresh the app can
+  // call hydrate() before the auth session is restored. An unauthenticated
+  // query returns an EMPTY set (RLS hides everything) with no error, which
+  // would then blank the loaded chama. So confirm a live session first — if
+  // there isn't one yet, keep what we have; a later auth event re-hydrates.
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (!data?.session) return groupCount();
+  } catch { return groupCount(); }
   const groups = await fetchGroups(currentUser?.id);
   const states = {};
   for (const g of groups) {
@@ -159,6 +168,13 @@ export async function hydrate(user) {
     } catch (e) {
       console.warn('[hydrate] Migration of local group to Supabase failed:', e);
     }
+  }
+
+  // Never blank an already-populated app because a fetch came back empty
+  // (transient RLS/session blip). We only reach here with a live session, so a
+  // genuine "you have no groups" for a brand-new user still shows onboarding.
+  if (Object.keys(states).length === 0 && groupCount() > 0) {
+    return groupCount();
   }
 
   root = { activeGroupId: Object.keys(states)[0] || null, groups: states };
