@@ -147,8 +147,16 @@ export function onAuthChange(cb) {
   if (supabase) {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
-        cacheUser(null);
-        cb(null);
+        // If a local session exists, preserve it instead of logging out
+        const s = local.getSession();
+        if (s?.username) {
+          const u = { id: 'local-user', name: s.username, email: s.username };
+          cacheUser(u);
+          cb(u);
+        } else {
+          cacheUser(null);
+          cb(null);
+        }
       } else if (session?.user) {
         const u = mapUser(session.user);
         cacheUser(u);

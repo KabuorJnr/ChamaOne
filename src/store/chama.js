@@ -127,7 +127,16 @@ export async function hydrate(user) {
   // there isn't one yet, keep what we have; a later auth event re-hydrates.
   try {
     const { data } = await supabase.auth.getSession();
-    if (!data?.session) return groupCount();
+    if (!data?.session) {
+      try {
+        const raw = localStorage.getItem(KEY);
+        if (raw) root = JSON.parse(raw);
+        if (root?.activeGroupId) state = root.groups[root.activeGroupId];
+      } catch { /* ignore */ }
+      if (!root) root = { activeGroupId: null, groups: {} };
+      version++; listeners.forEach((fn) => fn());
+      return groupCount();
+    }
   } catch { return groupCount(); }
   const groups = await fetchGroups(currentUser?.id);
   const states = {};
