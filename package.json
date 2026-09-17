@@ -14,7 +14,9 @@
     "android:open": "cap open android",
     "android:run": "vite build && cap sync android && cap run android",
     "assets": "capacitor-assets generate --android",
-    "android:apk": "npm run build && npx cap sync android && capacitor-assets generate --android && node scripts/stamp-android-version.mjs"
+    "android:apk": "npm run build && npx cap sync android && capacitor-assets generate --android && node scripts/stamp-android-version.mjs",
+    "android:prep": "npm run build && npx cap sync android && capacitor-assets generate --android && node scripts/stamp-android-version.mjs && node scripts/configure-android-release.mjs",
+    "android:bundle": "npm run android:prep && cd android && gradlew bundleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

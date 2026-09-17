@@ -13,6 +13,11 @@ ios/
 *.log
 npm-debug.log*
 
+# Android signing secrets — NEVER commit these
+keystore.properties
+*.keystore
+*.jks
+
 # Editor / OS
 .DS_Store
 .vscode/
