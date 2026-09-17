@@ -25,8 +25,12 @@ const before = s;
 s = s.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`);
 s = s.replace(/versionName\s+"[^"]*"/, `versionName "${versionName}"`);
 
-if (s === before) {
+if (!/versionCode\s+\d+/.test(before) || !/versionName\s+"[^"]*"/.test(before)) {
   console.warn('[version] could not find versionCode/versionName in build.gradle — left unchanged.');
+  process.exit(0);
+}
+if (s === before) {
+  console.log(`[version] Android already matches ${versionName} (versionCode ${versionCode})`);
   process.exit(0);
 }
 writeFileSync(gradle, s);

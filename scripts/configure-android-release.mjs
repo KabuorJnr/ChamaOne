@@ -19,22 +19,25 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 const gradle = 'android/app/build.gradle';
-const propsFile = 'keystore.properties';
+const propsFile = existsSync('keystore.properties')
+  ? 'keystore.properties'
+  : (existsSync('android/keystore.properties') ? 'android/keystore.properties' : null);
 const MARKER = '// chamaone-release-signing';
 
 if (!existsSync(gradle)) {
   console.log(`[release] ${gradle} not found — run "npx cap add android" first. Skipping.`);
   process.exit(0);
 }
-if (!existsSync(propsFile)) {
-  console.log('[release] keystore.properties not found — skipping release signing.');
-  console.log('          (Debug builds are unaffected. See docs/PLAY_STORE.md to set it up.)');
+
+let s = readFileSync(gradle, 'utf8');
+if (s.includes(MARKER) || (s.includes('signingConfigs') && s.includes('keystorePropsFile'))) {
+  console.log('[release] signing already configured in build.gradle — nothing to do.');
   process.exit(0);
 }
 
-let s = readFileSync(gradle, 'utf8');
-if (s.includes(MARKER)) {
-  console.log('[release] signing already configured — nothing to do.');
+if (!propsFile) {
+  console.log('[release] keystore.properties not found — skipping release signing.');
+  console.log('          (Debug builds are unaffected. See docs/PLAY_STORE.md to set it up.)');
   process.exit(0);
 }
 

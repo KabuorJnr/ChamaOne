@@ -7,6 +7,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 // device; on the web host (Vercel) they resolve from the root just the same.
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url)));
 
+// Enable PWA service worker on Vercel deployments (or when explicitly requested via VITE_PWA=true).
+// On local machines and Capacitor mobile builds, the service worker is disabled to avoid Node 24 workbox deadlocks.
+const enablePWA = Boolean(process.env.VERCEL || process.env.VITE_PWA === 'true');
+
 export default defineConfig({
   base: './',
   // Single source of truth for the version shown in-app and stamped on the APK.
@@ -15,6 +19,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      disable: !enablePWA,
       registerType: 'autoUpdate',        // new deploy → picked up on next open
       includeAssets: ['favicon.svg', 'icons/*.png'],
       // The service worker only does anything on the hosted web build; under
