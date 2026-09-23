@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, ShieldAlert, CheckCircle2, Hourglass, RefreshCw, LogOut } from 'lucide-react';
 import { Logo } from '../App';
 import { isSupabaseConfigured } from '../lib/supabase';
 import './mobile.css';
@@ -31,6 +31,8 @@ export default function MobileOnboard({ store, user }) {
     } catch {}
   }, []);
 
+  const requests = store.myJoinRequests();
+
   const join = async () => {
     if (!code.trim()) { setErr('Enter an invite code or paste a join link'); return; }
     setErr(''); setInfo(''); setBusy(true);
@@ -38,7 +40,9 @@ export default function MobileOnboard({ store, user }) {
       const r = await store.joinGroup(code.trim());
       if (!r.ok) { setErr(r.error || 'Could not join'); return; }
       try { localStorage.removeItem('chamaone.pending_join'); } catch {}
-      // groupCount flips to 1 and App swaps to the shell automatically.
+      setCode('');
+      if (r.status === 'pending') setInfo(`Request sent to ${r.name || 'the Chama'}. An officer needs to approve you before you can see the group.`);
+      // Otherwise groupCount flips to 1 and App swaps to the shell automatically.
     } catch (e) {
       setErr('Something went wrong. Please try again.');
     } finally {
@@ -46,23 +50,20 @@ export default function MobileOnboard({ store, user }) {
     }
   };
 
-  const handleRequest = async () => {
-    if (!code.trim()) { setErr('Enter an invite code or paste a join link'); return; }
+  const checkAgain = async () => {
     setErr(''); setInfo(''); setBusy(true);
     try {
-      const r = await store.requestToJoin(code.trim());
-      if (!r.ok) { setErr(r.error || 'Could not send request'); return; }
-      try { localStorage.removeItem('chamaone.pending_join'); } catch {}
-      if (r.status === 'already_member') {
-        setInfo(`You are already a member of ${r.name}! Redirecting…`);
-      } else {
-        setInfo(`Join request submitted to ${r.name || 'the Chama'}! An officer will approve you shortly.`);
-      }
-    } catch (e) {
-      setErr('Something went wrong. Please try again.');
-    } finally {
-      setBusy(false);
-    }
+      const { approved, declined } = await store.pollJoinRequests();
+      if (declined.length) setErr(`Your request to join ${declined[0]} was declined.`);
+      else if (!approved.length) setInfo('Still waiting for an officer to approve you.');
+    } finally { setBusy(false); }
+  };
+
+  const cancel = async (req) => {
+    setBusy(true);
+    const r = await store.cancelJoinRequest(req.groupId);
+    setBusy(false);
+    if (!r.ok) setErr(r.error || 'Could not cancel the request');
   };
 
   const create = () => {
@@ -100,13 +101,30 @@ export default function MobileOnboard({ store, user }) {
           {err && <div className="cha-auth-err"><ShieldAlert size={18} /> {err}</div>}
           {info && <div className="cha-card" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', marginBottom: 12, padding: 12, fontSize: 13, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 8 }}><CheckCircle2 size={18} color="#059669" /> {info}</div>}
 
+          {requests.map((req) => (
+            <div key={req.groupId} className="cha-card" style={{ background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 12, padding: 14, borderRadius: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#92400e', fontSize: 14 }}>
+                <Hourglass size={17} /> Waiting for approval
+              </div>
+              <p style={{ margin: '6px 0 10px', fontSize: 13, color: '#78350f', lineHeight: 1.45 }}>
+                You asked to join <b>{req.name}</b>. The Chairperson or Treasurer has to approve you first — this screen opens the Chama automatically once they do.
+              </p>
+              <div className="cha-btn-row">
+                <button className="cha-btn cha-btn-sm" onClick={checkAgain} disabled={busy}><RefreshCw size={14} /> Check now</button>
+                <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={() => cancel(req)} disabled={busy}>Cancel request</button>
+              </div>
+            </div>
+          ))}
+
           {mode === 'join' ? (
             <>
               <label className="cha-field"><span>Invite link or code</span>
                 <input className="cha-input" value={code} onChange={(e) => setCode(e.target.value)}
                   placeholder="Paste https://… or enter code" style={{ fontSize: 15 }} /></label>
-              <button className="cha-btn" onClick={join} disabled={busy} style={{ marginTop: 4 }}>{busy ? 'Joining…' : <>Join group now <ArrowRight size={18} /></>}</button>
-              <button className="cha-btn cha-btn-ghost" onClick={handleRequest} disabled={busy} style={{ marginTop: 8 }}>Request to join</button>
+              <button className="cha-btn" onClick={join} disabled={busy} style={{ marginTop: 4 }}>{busy ? 'Sending…' : <>Join Chama <ArrowRight size={18} /></>}</button>
+              <p className="cha-muted cha-small" style={{ marginTop: 10 }}>
+                Most Chamas approve new members first. A personal invite code from an officer lets you in straight away.
+              </p>
             </>
           ) : (
             <>
@@ -133,6 +151,12 @@ export default function MobileOnboard({ store, user }) {
 
               <button className="cha-btn" onClick={create} style={{ marginTop: 4 }}>Create group <ArrowRight size={18} /></button>
             </>
+          )}
+
+          {user?.onLogout && (
+            <button className="cha-btn cha-btn-ghost cha-btn-sm" onClick={user.onLogout} style={{ marginTop: 16 }}>
+              <LogOut size={14} /> Sign out
+            </button>
           )}
         </div>
       </div>

@@ -27,6 +27,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: 'index.html',
+        // Static pages (Play Store links) must load themselves, not the app shell.
+        navigateFallbackDenylist: [/^\/privacy/, /^\/delete-account/, /^\/get/, /\.apk$/],
         cleanupOutdatedCaches: true,
       },
       manifest: {

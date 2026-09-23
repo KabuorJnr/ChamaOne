@@ -1,4 +1,5 @@
-import { Plus, UserPlus, Users, MessageCircle, Copy, Check, UserCheck, Link } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, UserPlus, Users, MessageCircle, Copy, Check, X, UserCheck, ShieldCheck } from 'lucide-react';
 import { fmtKES, fmtDateTime, Avatar, RoleTag, StatusPill, useUI, Empty } from './kit';
 import { openAddMember, openCollect, openInvite } from './forms';
 import { makeInviteLink, whatsappInviteUrl } from '../../lib/invite';
@@ -9,6 +10,17 @@ export function MembersScreen({ store, open }) {
   const ms = store.members();
   const joinCode = store.group?.joinCode;
   const pending = store.pendingRequests ? store.pendingRequests() : [];
+  const needsApproval = store.group?.requireApproval !== false;
+  const isChair = store.myRole() === 'Chairperson';
+  const [busyId, setBusyId] = useState(null);
+
+  const decide = async (p, approve) => {
+    setBusyId(p.id);
+    const res = approve ? await store.approveMember(p.id) : await store.rejectMember(p.id);
+    setBusyId(null);
+    if (!res.ok) return ui.toast(res.error || 'Something went wrong — try again');
+    ui.toast(approve ? `${p.name} is now a member` : `Declined ${p.name}'s request`);
+  };
 
   return (
     <>
@@ -16,12 +28,30 @@ export function MembersScreen({ store, open }) {
         <div className="cha-card" style={{ margin: '0 2px 14px', padding: '16px', background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)', border: '1px solid #bfdbfe', borderRadius: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.06em', color: 'var(--blue-deep)' }}>CHAMA INVITE LINK</div>
-            <span style={{ fontSize: 11, background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>One-Click Join</span>
+            <span style={{ fontSize: 11, background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>
+              {needsApproval ? 'You approve' : 'Instant join'}
+            </span>
           </div>
-          
+
           <div className="cha-muted cha-small" style={{ fontSize: 12, lineHeight: 1.4, color: '#334155' }}>
-            Share this link with members. When tapped, they automatically become part of <b>{store.group.name}</b> without having to type any code.
+            {needsApproval
+              ? <>Share this link with people you want in <b>{store.group.name}</b>. When they tap it, they appear below as a join request — they only become members (and see the group) after you approve them.</>
+              : <>Share this link with members. Anyone who taps it joins <b>{store.group.name}</b> straight away, without approval.</>}
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12, padding: '10px 12px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 12, cursor: isChair ? 'pointer' : 'default' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
+              <ShieldCheck size={16} color="#059669" /> Approve people before they join
+            </span>
+            <input
+              type="checkbox"
+              checked={needsApproval}
+              disabled={!isChair}
+              onChange={(e) => { store.setRequireApproval(e.target.checked); ui.toast(e.target.checked ? 'New members now need your approval' : 'Anyone with the link can join instantly'); }}
+              style={{ width: 20, height: 20 }}
+            />
+          </label>
+          {!isChair && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Only the Chairperson can change this.</div>}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
             <a
@@ -69,21 +99,31 @@ export function MembersScreen({ store, open }) {
             <span style={{ fontSize: 11, background: '#fef3c7', color: '#b45309', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>Awaiting Approval</span>
           </div>
           {pending.map((p) => (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #fef3c7' }}>
-              <div>
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderTop: '1px solid #fef3c7' }}>
+              <div style={{ minWidth: 0 }}>
                 <b style={{ fontSize: 13, color: '#1e293b' }}>{p.name}</b>
-                <div style={{ fontSize: 11, color: '#64748b' }}>{p.phone ? store.displayPhone(p.phone) : 'Requested to join'}</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                  {p.phone ? store.displayPhone(p.phone) + ' · ' : ''}{p.joinedAt ? `asked ${fmtDateTime(p.joinedAt)}` : 'Requested to join'}
+                </div>
               </div>
-              <button
-                className="cha-btn cha-btn-sm"
-                onClick={async () => {
-                  const res = await store.approveMember(p.id);
-                  if (res.ok) ui.toast(`${p.name} approved!`);
-                }}
-                style={{ background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              >
-                <Check size={14} /> Approve
-              </button>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  className="cha-btn cha-btn-ghost cha-btn-sm"
+                  disabled={busyId === p.id}
+                  onClick={() => ui.confirm(`Decline ${p.name}?`, 'They will not be added to the Chama. They can ask again with the link.', () => decide(p, false))}
+                  style={{ borderRadius: 10, padding: '6px 10px', fontSize: 12, fontWeight: 700, color: 'var(--bad)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <X size={14} /> Decline
+                </button>
+                <button
+                  className="cha-btn cha-btn-sm"
+                  disabled={busyId === p.id}
+                  onClick={() => decide(p, true)}
+                  style={{ background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Check size={14} /> Approve
+                </button>
+              </div>
             </div>
           ))}
         </div>

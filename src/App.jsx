@@ -3,7 +3,7 @@ import MobileShell from './mobile/MobileShell';
 import MobileAuth from './mobile/MobileAuth';
 import MobileOnboard from './mobile/MobileOnboard';
 import MobileLanding from './mobile/MobileLanding';
-import { useChama, setNotifSink, getState, hydrate, setCurrentUser, stopRealtime } from './store/chama';
+import { useChama, setNotifSink, getState, hydrate, setCurrentUser, clearSession } from './store/chama';
 import { notify as deviceNotify } from './lib/notifications';
 import { currentUser, onAuthChange, signOut } from './lib/account';
 import { isNative } from './lib/native';
@@ -98,7 +98,9 @@ export default function App() {
         if (pending) {
           localStorage.removeItem('chamaone.pending_join');
           store.joinGroup(pending).then((res) => {
-            if (res.ok) {
+            if (res.ok && res.status === 'pending') {
+              setJoinToast(`Request sent to ${res.name}. You'll get in as soon as an officer approves you.`);
+            } else if (res.ok) {
               setJoinToast(`Joined ${res.name}! Welcome to your Chama.`);
             } else {
               setJoinToast(res.error || 'Could not join with that link.');
@@ -108,6 +110,20 @@ export default function App() {
       } catch {}
     }
   }, [account?.id, hydrated]);
+
+  // While a join request is waiting, check every 15 s whether an officer has
+  // approved (or declined) it, and open the Chama as soon as it's approved.
+  const waiting = account && hydrated ? store.myJoinRequests().length : 0;
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(() => {
+      store.pollJoinRequests().then(({ approved, declined }) => {
+        if (approved.length) setJoinToast(`You're in! ${approved[0]} approved your request.`);
+        else if (declined.length) setJoinToast(`Your request to join ${declined[0]} was declined.`);
+      }).catch(() => {});
+    }, 15000);
+    return () => clearInterval(t);
+  }, [waiting]);
 
   useEffect(() => {
     if (joinToast) {
@@ -123,7 +139,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
-  const onLogout = () => { stopRealtime(); signOut(); setAccount(null); };
+  const onLogout = () => { clearSession(); signOut(); setAccount(null); };
   const user = { name: account?.name || 'Member', role: store.myRole(), onLogout };
 
   // Hold the splash until the branded delay AND the session check are both done,
@@ -203,7 +219,9 @@ function UpdateBanner() {
 
   const handleUpdate = () => {
     if (isNative()) {
-      window.location.href = 'https://chama-one-ten.vercel.app/ChamaOne.apk';
+      // Play policy: a Play-distributed app may only update through Google
+      // Play — never by downloading an APK itself. Open the store listing.
+      window.location.href = 'https://play.google.com/store/apps/details?id=com.chamaone.app';
     } else {
       window.location.reload();
     }
@@ -254,7 +272,7 @@ function UpdateBanner() {
             boxShadow: '0 2px 6px rgba(245,158,11,0.3)',
           }}
         >
-          {isNative() ? 'Download APK' : 'Update Now'}
+          {isNative() ? 'Update on Play' : 'Update Now'}
         </button>
         <button
           onClick={() => setNewVersion(null)}

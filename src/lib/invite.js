@@ -48,7 +48,7 @@ export function inviteMessage({ groupName, memberName, code }) {
   return [
     `${who} You're invited to join "${groupName || 'our Chama'}" on ChamaOne.`,
     '',
-    'Tap this link to join immediately:',
+    memberName ? 'Tap this link to join:' : 'Tap this link to join (an officer may need to approve you first):',
     link,
     '',
     `(Or enter code: ${code || ''})`,

@@ -10,7 +10,12 @@
  * ===================================================================== */
 import { useSyncExternalStore } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
-import { db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinGroupByCode, requestToJoinGroup as dbRequestToJoin, approveJoinRequest as dbApproveJoin, subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment } from '../lib/db';
+import {
+  db, createGroupRemote, fetchGroups, loadGroupState, groupPatchToRow, joinChama,
+  approveJoinRequest as dbApproveJoin, rejectJoinRequest as dbRejectJoin,
+  myJoinRequests as dbMyJoinRequests, cancelJoinRequest as dbCancelJoin, deleteMyAccount as dbDeleteMyAccount,
+  subscribeGroup, confirmPayment as dbConfirmPayment, rejectPayment as dbRejectPayment,
+} from '../lib/db';
 import { extractJoinCode, makeInviteLink } from '../lib/invite';
 
 // v3 drops any previously-seeded demo data still sitting in localStorage.
@@ -60,7 +65,9 @@ export const fmtDateTime = (iso) =>
 
 /* ---------- persistence (multi-group) ---------- */
 function emit() {
-  try { localStorage.setItem(KEY, JSON.stringify(root)); } catch { /* quota / private mode */ }
+  // `owner` ties the cached snapshot to the account that wrote it, so another
+  // person signing in on the same phone never sees it.
+  try { localStorage.setItem(KEY, JSON.stringify({ ...root, owner: currentUser?.id || null })); } catch { /* quota / private mode */ }
   version++; // bump the snapshot so useSyncExternalStore re-renders
   listeners.forEach((fn) => fn());
 }
@@ -114,6 +121,53 @@ function ensure() {
   return state;
 }
 
+/* ---------- keep device-only data across remote refreshes ---------- */
+// Projects and the Merry-go-round roster used to live only in memory, so every
+// refresh/realtime sync replaced them with empties — that's why projects
+// "disappeared". They now live in Supabase (migration 0006). loadGroupState
+// returns null for them when the backend can't provide them yet; in that
+// case keep this device's copy rather than wiping it. Projects that exist
+// only on this device are uploaded once the backend can store them.
+function readLocalRoot() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    const r = raw ? JSON.parse(raw) : null;
+    if (!r?.groups) return null;
+    if (r.owner && currentUser?.id && r.owner !== currentUser.id) return null; // someone else's cache
+    return r;
+  } catch { return null; }
+}
+function carryLocal(gs, prev) {
+  if (!gs) return gs;
+  const prevProjects = prev?.projects || [];
+  if (gs.projects == null) {
+    gs.projects = prevProjects;
+  } else {
+    gs.projects.forEach((p) => { p.synced = true; });
+    // Only never-uploaded projects are pushed — a project someone else
+    // deleted (synced before) must not be resurrected from this device.
+    const known = new Set(gs.projects.map((p) => p.id));
+    const orphans = prevProjects.filter((p) => !p.synced && !known.has(p.id));
+    if (orphans.length && canManageMoneyIn(gs)) {
+      orphans.forEach((p) => uploadProject(gs.group.id, p));
+      gs.projects = [...orphans, ...gs.projects];
+    }
+  }
+  if (!gs.rotation) gs.rotation = prev?.rotation || { recipientId: null, history: [], order: [] };
+  return gs;
+}
+function uploadProject(groupId, p) {
+  if (!REMOTE) return;
+  db.addProject(groupId, p, currentUser?.id).then(({ error }) => {
+    // A duplicate means an earlier upload already landed.
+    if (!error || /duplicate key/i.test(error.message || '')) { p.synced = true; emit(); }
+  }).catch(() => { /* stays unsynced; retried on the next refresh */ });
+}
+function canManageMoneyIn(gs) {
+  const mine = currentUser ? (gs.members || []).find((m) => m.userId === currentUser.id && m.status === 'active') : null;
+  return ['Chairperson', 'Treasurer'].includes(mine?.role);
+}
+
 /* ---------- remote hydration ---------- */
 // Load the signed-in user's groups from Supabase into the in-memory snapshot.
 // Returns the number of groups. In local mode it just ensures local state.
@@ -128,34 +182,38 @@ export async function hydrate(user) {
   try {
     const { data } = await supabase.auth.getSession();
     if (!data?.session) {
-      try {
-        const raw = localStorage.getItem(KEY);
-        if (raw) root = JSON.parse(raw);
-        if (root?.activeGroupId) state = root.groups[root.activeGroupId];
-      } catch { /* ignore */ }
+      const cached = readLocalRoot();
+      if (cached) {
+        root = { activeGroupId: cached.activeGroupId, groups: cached.groups };
+        if (root.activeGroupId) state = root.groups[root.activeGroupId] || null;
+      }
       if (!root) root = { activeGroupId: null, groups: {} };
       version++; listeners.forEach((fn) => fn());
       return groupCount();
     }
   } catch { return groupCount(); }
   const groups = await fetchGroups(currentUser?.id);
+  const prevRoot = root?.groups && Object.keys(root.groups).length ? root : readLocalRoot();
   const states = {};
   for (const g of groups) {
     const gs = await loadGroupState(g.id);
-    if (gs) { gs.currentUserId = currentUser?.id; states[g.id] = gs; }
+    if (gs) { gs.currentUserId = currentUser?.id; states[g.id] = carryLocal(gs, prevRoot?.groups?.[g.id]); }
   }
+  await refreshJoinRequests();
 
   // If user has no groups in Supabase, check if they created a group locally while offline
   // and migrate it to Supabase so their members and codes sync across devices.
   if (Object.keys(states).length === 0 && currentUser?.id) {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const localRoot = JSON.parse(raw);
+      const localRoot = readLocalRoot();
+      {
         if (localRoot?.groups && Object.keys(localRoot.groups).length > 0) {
           for (const localId of Object.keys(localRoot.groups)) {
             const lg = localRoot.groups[localId];
-            if (lg?.group?.name && Array.isArray(lg?.members) && lg.members.length > 0) {
+            // Only groups created on this device that never reached the backend
+            // (legacy caches have no owner) — never re-create a synced group.
+            const offlineOnly = !localRoot.owner || lg?.pendingUpload;
+            if (offlineOnly && lg?.group?.name && Array.isArray(lg?.members) && lg.members.length > 0) {
               if (lg.members[0]) lg.members[0].userId = currentUser.id;
               if (!lg.group.joinCode) lg.group.joinCode = genCode();
               lg.members.forEach((m) => { if (!m.inviteCode) m.inviteCode = genCode(); });
@@ -167,7 +225,7 @@ export async function hydrate(user) {
                 const remoteState = await loadGroupState(lg.group.id);
                 if (remoteState) {
                   remoteState.currentUserId = currentUser.id;
-                  states[lg.group.id] = remoteState;
+                  states[lg.group.id] = carryLocal(remoteState, lg);
                 }
               }
             }
@@ -186,9 +244,11 @@ export async function hydrate(user) {
     return groupCount();
   }
 
-  root = { activeGroupId: Object.keys(states)[0] || null, groups: states };
+  // Stay on the Chama the user was last looking at.
+  const keepActive = prevRoot?.activeGroupId && states[prevRoot.activeGroupId] ? prevRoot.activeGroupId : null;
+  root = { activeGroupId: keepActive || Object.keys(states)[0] || null, groups: states };
   state = root.groups[root.activeGroupId] || null;
-  version++; listeners.forEach((fn) => fn());
+  emit(); // also persists the merged snapshot for the next cold start
   startRealtime();
   return Object.keys(states).length;
 }
@@ -225,9 +285,9 @@ function refreshActiveGroup() {
   loadGroupState(id).then((gs) => {
     if (!gs || root.activeGroupId !== id) return;
     gs.currentUserId = currentUser?.id;
-    root.groups[id] = gs;
-    state = gs;
-    version++; listeners.forEach((fn) => fn());
+    root.groups[id] = carryLocal(gs, root.groups[id]);
+    state = root.groups[id];
+    emit();
   }).catch(() => { /* ignore */ });
 }
 export function startRealtime() {
@@ -245,56 +305,102 @@ export function stopRealtime() {
   clearTimeout(rtTimer);
 }
 
-/* ---------- join a group by code or link ---------- */
-export async function joinGroup(codeOrLink) {
-  if (!REMOTE) return { ok: false, error: 'Joining a group needs the online backend.' };
-  const code = extractJoinCode(codeOrLink);
-  if (!code) return { ok: false, error: 'Enter a valid invite code or link.' };
-  const res = await joinGroupByCode(code);
-  if (!res.ok) return res;
-  const gs = await loadGroupState(res.groupId);
-  if (!gs) return { ok: false, error: 'Joined, but could not load the group.' };
+/* ---------- join a group by code or link ----------
+ * Using the group-wide link/code files a join REQUEST when the Chama requires
+ * approval (the default): the person waits until a Chairperson/Treasurer
+ * approves them and can't see the group's data until then. A member-specific
+ * invite code (the officer already added that person) joins straight away.
+ * Returns { ok, status: 'joined' | 'pending' | 'already_member', name }. */
+async function openJoinedGroup(groupId) {
+  const gs = await loadGroupState(groupId);
+  if (!gs) return null;
   gs.currentUserId = currentUser?.id;
   ensure();
-  root.groups[res.groupId] = gs;
-  root.activeGroupId = res.groupId;
-  state = gs;
+  root.groups[groupId] = carryLocal(gs, root.groups[groupId]);
+  root.activeGroupId = groupId;
+  state = root.groups[groupId];
+  joinRequests = joinRequests.filter((r) => r.groupId !== groupId);
   emit();
   startRealtime();
-  return { ok: true, name: gs.group.name };
+  return state;
 }
 
-/* ---------- request to join a group ---------- */
-export async function requestToJoin(codeOrLink, note = '') {
+export async function joinGroup(codeOrLink, { forceRequest = false } = {}) {
   if (!REMOTE) return { ok: false, error: 'Joining a group needs the online backend.' };
   const code = extractJoinCode(codeOrLink);
   if (!code) return { ok: false, error: 'Enter a valid invite code or link.' };
-  const res = await dbRequestToJoin(code, note);
+  const res = await joinChama(code, forceRequest);
   if (!res.ok) return res;
-  if (res.groupId) {
-    const gs = await loadGroupState(res.groupId);
-    if (gs) {
-      gs.currentUserId = currentUser?.id;
-      ensure();
-      root.groups[res.groupId] = gs;
-      root.activeGroupId = res.groupId;
-      state = gs;
-      emit();
-      startRealtime();
+  if (res.status === 'pending' || res.status === 'requested') {
+    if (!joinRequests.some((r) => r.groupId === res.groupId)) {
+      joinRequests = [{ groupId: res.groupId, name: res.name, requestedAt: now() }, ...joinRequests];
     }
+    emit();
+    return { ok: true, status: 'pending', name: res.name };
   }
+  const gs = await openJoinedGroup(res.groupId);
+  if (!gs) return { ok: false, error: 'Joined, but could not load the group. Pull to refresh in a moment.' };
+  return { ok: true, status: res.status || 'joined', name: gs.group.name };
+}
+export const requestToJoin = (codeOrLink) => joinGroup(codeOrLink, { forceRequest: true });
+
+/* ---------- my outgoing join requests (waiting for approval) ---------- */
+let joinRequests = [];
+export const myJoinRequests = () => joinRequests;
+export async function refreshJoinRequests() {
+  if (!REMOTE || !currentUser?.id) return joinRequests;
+  const list = await dbMyJoinRequests();
+  if (list) joinRequests = list;
+  return joinRequests;
+}
+// Re-check pending requests. When one is no longer pending it was either
+// approved (the group is now readable) or declined.
+export async function pollJoinRequests() {
+  if (!REMOTE || !joinRequests.length) return { approved: [], declined: [] };
+  const before = joinRequests;
+  const list = await dbMyJoinRequests();
+  if (!list) return { approved: [], declined: [] };
+  const still = new Set(list.map((r) => r.groupId));
+  const approved = [], declined = [];
+  for (const r of before.filter((x) => !still.has(x.groupId))) {
+    if (await openJoinedGroup(r.groupId)) approved.push(r.name); else declined.push(r.name);
+  }
+  joinRequests = list;
+  emit();
+  return { approved, declined };
+}
+export async function cancelJoinRequest(groupId) {
+  const res = await dbCancelJoin(groupId);
+  if (res.ok) { joinRequests = joinRequests.filter((r) => r.groupId !== groupId); emit(); }
   return res;
 }
 
+/* ---------- officers: approve / decline requests ---------- */
 export async function approveMember(memberId) {
   const m = memberById(memberId);
   if (!m) return { ok: false, error: 'Member not found' };
+  if (REMOTE) {
+    const res = await dbApproveJoin(memberId);
+    if (!res.ok) return res;
+  }
   m.status = 'active';
+  m.joinedAt = now();
+  notify('member', `${m.name} was approved and is now a member.`);
   emit();
-  if (REMOTE) mirror(dbApproveJoin(memberId));
-  notify('member', `${m.name} was approved and is now an active member.`);
   return { ok: true };
 }
+export async function rejectMember(memberId) {
+  const m = memberById(memberId);
+  if (!m) return { ok: false, error: 'Request not found' };
+  if (REMOTE) {
+    const res = await dbRejectJoin(memberId);
+    if (!res.ok) return res;
+  }
+  state.members = state.members.filter((x) => x.id !== memberId);
+  emit();
+  return { ok: true };
+}
+export function setRequireApproval(on) { updateGroup({ requireApproval: !!on }); }
 
 export const pendingRequests = () => (ensure().members || []).filter((m) => m.status === 'inactive');
 
@@ -304,7 +410,7 @@ export function listGroups() {
   ensure();
   return Object.values(root.groups).map((g) => ({
     id: g.group.id, name: g.group.name, type: g.group.type,
-    memberCount: g.members.filter((m) => m.status !== 'removed').length,
+    memberCount: g.members.filter((m) => m.status === 'active').length,
     balance: (g.ledger || []).reduce((t, e) => t + (e.direction === 'in' ? e.amount : -e.amount), 0),
     active: g.group.id === root.activeGroupId,
   }));
@@ -332,7 +438,9 @@ export function deleteGroup(id) {
 }
 
 /* ---------- getters ---------- */
-export const members = () => ensure().members.filter((m) => m.status !== 'removed');
+// Active members only — pending join requests ('inactive') aren't members yet,
+// so they don't count toward votes, cycle targets or the rotation.
+export const members = () => ensure().members.filter((m) => m.status === 'active');
 export const memberById = (id) => ensure().members.find((m) => m.id === id);
 export const activeCycle = () => {
   const s = ensure();
@@ -426,7 +534,11 @@ export function createGroup({ name, type, amount, frequency, members: mem }) {
   state = g;
   notify('system', `Welcome to ChamaOne! "${name}" is ready.`);
   emit();
-  if (REMOTE && currentUser) { mirror(createGroupRemote(g, currentUser.id)); startRealtime(); }
+  if (REMOTE && currentUser) {
+    g.pendingUpload = true;
+    createGroupRemote(g, currentUser.id).then(({ error }) => { if (!error) { delete g.pendingUpload; emit(); } }).catch(() => {});
+    startRealtime();
+  }
 }
 function makeCycle(id, frequency) {
   const start = new Date();
@@ -791,6 +903,7 @@ export function setRotationRecipient(recipientId) {
   const m = memberById(recipientId);
   notify('rotation', `${m ? m.name : 'A member'} is now set as the next Merry-Go-Round payout recipient.`);
   emit();
+  saveRotation(s);
 }
 
 export function reorderRotation(newOrder) {
@@ -798,6 +911,10 @@ export function reorderRotation(newOrder) {
   if (!s.rotation) s.rotation = { recipientId: null, history: [], order: [] };
   s.rotation.order = newOrder;
   emit();
+  saveRotation(s);
+}
+function saveRotation(s) {
+  if (REMOTE) mirror(db.setRotation(s.group.id, s.rotation));
 }
 
 export function disburseRotationPot(note) {
@@ -835,9 +952,8 @@ export function disburseRotationPot(note) {
 
   notify('money', `Merry-go-round pot of ${fmtKES(potAmount)} paid out to ${rot.recipient.name}! Next: ${nextRecipient ? nextRecipient.name : 'Done'}.`);
   emit();
-  if (REMOTE) {
-    mirror(db.addLedger(s.group.id, lx));
-  }
+  if (REMOTE) mirror(db.addLedger(s.group.id, lx));
+  saveRotation(s);
   return { ok: true, recipient: rot.recipient, amount: potAmount };
 }
 
@@ -862,11 +978,19 @@ export function createProject({ title, description, targetBudget, category, targ
     targetDate: targetDate || '',
     createdAt: now(),
     milestones: [],
+    synced: false,
   };
   s.projects.unshift(p);
   notify('project', `New project "${p.title}" created with target budget ${fmtKES(p.targetBudget)}.`);
   emit();
+  uploadProject(s.group.id, p);
   return p;
+}
+// Persist a project change. Not-yet-uploaded projects are uploaded whole.
+function saveProject(s, p, patch) {
+  if (!REMOTE) return;
+  if (p.synced) mirror(db.setProject(p.id, patch));
+  else uploadProject(s.group.id, p);
 }
 
 export function allocateToProject(projectId, amount, note) {
@@ -892,9 +1016,8 @@ export function allocateToProject(projectId, amount, note) {
 
   notify('money', `Allocated ${fmtKES(numAmt)} to project "${p.title}".`);
   emit();
-  if (REMOTE) {
-    mirror(db.addLedger(s.group.id, lx));
-  }
+  if (REMOTE) mirror(db.addLedger(s.group.id, lx));
+  saveProject(s, p, { allocatedAmount: p.allocatedAmount, status: p.status });
   return { ok: true, project: p };
 }
 
@@ -905,6 +1028,7 @@ export function updateProject(projectId, patch) {
   if (p) {
     Object.assign(p, patch);
     emit();
+    saveProject(s, p, patch);
   }
   return p;
 }
@@ -914,10 +1038,31 @@ export function deleteProject(projectId) {
   if (!s.projects) s.projects = [];
   s.projects = s.projects.filter((x) => x.id !== projectId);
   emit();
+  if (REMOTE) mirror(db.deleteProject(projectId));
 }
 
 /* ---------- lifecycle ---------- */
 export function getState() { return state; } // raw current state (may be null pre-init)
+
+// Sign-out: drop the in-memory snapshot so the next account starts clean.
+// The on-device cache stays (tagged with its owner) for a fast next sign-in.
+export function clearSession() {
+  stopRealtime();
+  if (REMOTE) { root = { activeGroupId: null, groups: {} }; state = null; }
+  joinRequests = [];
+  currentUser = null;
+  version++; listeners.forEach((fn) => fn());
+}
+
+// Permanently delete the signed-in account (Google Play requirement).
+export async function deleteAccount() {
+  if (!REMOTE) return { ok: false, error: 'Account deletion needs the online backend.' };
+  const res = await dbDeleteMyAccount();
+  if (!res.ok) return res;
+  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+  clearSession();
+  return { ok: true };
+}
 // reset/wipe rebuild the whole container as a single fresh demo group.
 export function reset() {
   // Remote: re-pull the real state. Local: clear back to empty.
@@ -935,7 +1080,8 @@ export function wipe() {
  * EduOne's `store` prop shape. Re-renders subscribers on every emit().
  * ===================================================================== */
 const actions = {
-  createGroup, joinGroup, requestToJoin, approveMember, pendingRequests, makeInviteLink,
+  createGroup, joinGroup, requestToJoin, approveMember, rejectMember, pendingRequests, makeInviteLink,
+  setRequireApproval, myJoinRequests, refreshJoinRequests, pollJoinRequests, cancelJoinRequest, deleteAccount,
   listGroups, groupCount, switchGroup, deleteGroup,
   startNextCycle, updateGroup, updateSettings,
   addMember, removeMember, setMemberRole,

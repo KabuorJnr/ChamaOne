@@ -94,6 +94,27 @@ const rowToPayment = (r) => ({
   reportedBy: r.reported_by, createdAt: r.created_at,
 });
 
+const projectToRow = (groupId, p, userId) => ({
+  id: p.id, group_id: groupId, title: p.title, description: p.description || '', category: p.category || 'Investment',
+  target_budget: p.targetBudget || 0, allocated_amount: p.allocatedAmount || 0, status: p.status || 'active',
+  target_date: p.targetDate || null, milestones: p.milestones || [], created_at: p.createdAt, created_by: userId || null,
+});
+const rowToProject = (r) => ({
+  id: r.id, title: r.title, description: r.description || '', category: r.category || 'Investment',
+  targetBudget: Number(r.target_budget) || 0, allocatedAmount: Number(r.allocated_amount) || 0, status: r.status || 'active',
+  targetDate: r.target_date || '', milestones: r.milestones || [], createdAt: r.created_at,
+});
+// camelCase project patch -> snake_case columns
+function projectPatchToRow(patch) {
+  const map = {
+    title: 'title', description: 'description', category: 'category', targetBudget: 'target_budget',
+    allocatedAmount: 'allocated_amount', status: 'status', targetDate: 'target_date', milestones: 'milestones',
+  };
+  const row = {};
+  for (const k of Object.keys(patch)) if (map[k]) row[map[k]] = k === 'targetDate' ? (patch[k] || null) : patch[k];
+  return row;
+}
+
 const groupToRow = (g, userId) => ({
   id: g.id, name: g.name, type: g.type, contribution_amount: g.contributionAmount, frequency: g.frequency,
   currency: g.currency, loan_interest: g.loanInterest, active_cycle_id: g.activeCycleId,
@@ -103,13 +124,15 @@ const rowToGroup = (r) => ({
   id: r.id, name: r.name, type: r.type, contributionAmount: Number(r.contribution_amount), frequency: r.frequency,
   currency: r.currency, loanInterest: Number(r.loan_interest), activeCycleId: r.active_cycle_id,
   joinCode: r.join_code || '', createdAt: r.created_at,
+  // undefined until migration 0006 is applied — treated as "approval on".
+  requireApproval: r.require_approval !== false,
 });
 
 /* ---------- read: which groups am I in ---------- */
 export async function fetchGroups(userId) {
   if (!supabase || !userId) return [];
   const [mshipsRes, createdRes] = await Promise.all([
-    supabase.from('group_members').select('group_id').eq('user_id', userId).neq('status', 'removed'),
+    supabase.from('group_members').select('group_id').eq('user_id', userId).eq('status', 'active'),
     supabase.from('groups').select('id').eq('created_by', userId),
   ]);
   const memGroupIds = (mshipsRes.data || []).map((m) => m.group_id);
@@ -124,7 +147,7 @@ export async function fetchGroups(userId) {
 /* ---------- read: assemble one group's full state ---------- */
 export async function loadGroupState(groupId) {
   if (!supabase) return null;
-  const [g, members, cycles, contributions, loans, loanVotes, repayments, meetings, motions, motionVotes, ledger, notifications, paymentsRes] =
+  const [g, members, cycles, contributions, loans, loanVotes, repayments, meetings, motions, motionVotes, ledger, notifications, paymentsRes, projectsRes] =
     await Promise.all([
       supabase.from('groups').select('*').eq('id', groupId).single(),
       supabase.from('group_members').select('*').eq('group_id', groupId),
@@ -139,6 +162,7 @@ export async function loadGroupState(groupId) {
       supabase.from('ledger').select('*').eq('group_id', groupId).order('date', { ascending: false }),
       supabase.from('notifications').select('*').eq('group_id', groupId).order('date', { ascending: false }),
       supabase.from('payments').select('*').eq('group_id', groupId).order('created_at', { ascending: false }),
+      supabase.from('projects').select('*').eq('group_id', groupId).order('created_at', { ascending: false }),
     ]);
   if (g.error) { console.error('[db] loadGroupState', g.error.message); return null; }
 
@@ -181,8 +205,10 @@ export async function loadGroupState(groupId) {
     notifications: (notifications.data || []).map(rowToNotif),
     payments: (paymentsRes?.data || []).map(rowToPayment),
     settings: { simulateMpesa: true, shortcode: '', callbackUrl: '', pushEnabled: false },
-    rotation: { recipientId: null, history: [], order: [] },
-    projects: [],
+    // null = not stored in the backend (migration 0006 not applied yet) — the
+    // store then keeps this device's copy instead of wiping it.
+    rotation: g.data.rotation || null,
+    projects: projectsRes?.error ? null : (projectsRes?.data || []).map(rowToProject),
     onboarded: true,
   };
 }
@@ -268,6 +294,17 @@ export const db = {
     status: 'pending', note: p.note || '', reported_by: reportedBy || null,
   }),
 
+  addProject: (groupId, p, userId) => ins('projects', projectToRow(groupId, p, userId)),
+  setProject: (projectId, patch) => upd('projects', projectId, projectPatchToRow(patch)),
+  deleteProject: (projectId) => del('projects', projectId),
+
+  setRotation: async (groupId, rotation) => {
+    if (!supabase) return { error: null };
+    const { error } = await supabase.rpc('set_group_rotation', { p_group: groupId, p_rotation: rotation });
+    if (error) console.error('[db] set_group_rotation', error.message);
+    return { error };
+  },
+
   deleteGroup: (groupId) => del('groups', groupId),  // cascades to all child rows
 };
 
@@ -285,11 +322,64 @@ export async function rejectPayment(paymentId, note = '') {
   return { ok: true };
 }
 
-/* ---------- join by code (SECURITY DEFINER RPC) ----------
- * Accepts either a member-specific invite code (claims that member row) or
- * the group-wide join code. Falls back to the older RPC on projects that
- * haven't run migration 0004 yet, AND tries a direct member-invite-code
- * claim so per-member codes always work. */
+/* ---------- join by code / link (approval-aware) ----------
+ * join_chama (migration 0006) applies the group's approval rule and returns
+ * { ok, status: 'joined' | 'pending' | 'already_member', groupId, name }.
+ * Projects without 0006 fall back to the older RPCs below. */
+const rpcMissing = (error) => !!error && /could not find|does not exist|schema cache/i.test(error.message);
+const cleanErr = (error, fallback) => (error?.message || fallback).replace(/^.*?:\s*/, '');
+
+export async function joinChama(code, forceRequest = false) {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const p_code = (code || '').trim().toUpperCase();
+  const { data, error } = await supabase.rpc('join_chama', { p_code, p_force_request: forceRequest });
+  if (!error && data) return data;
+  if (!rpcMissing(error)) return { ok: false, error: cleanErr(error, 'Could not join') };
+
+  if (forceRequest) {
+    const r = await supabase.rpc('request_to_join', { p_code, p_note: '' });
+    if (!r.error && r.data) return r.data.status === 'requested' ? { ...r.data, status: 'pending' } : r.data;
+    return { ok: false, error: cleanErr(r.error, 'Could not send request') };
+  }
+  const legacy = await joinGroupByCode(p_code);
+  return legacy.ok ? { ...legacy, status: 'joined' } : legacy;
+}
+
+// The signed-in user's own pending join requests. null = unknown (offline
+// or migration 0006 not applied).
+export async function myJoinRequests() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('my_join_requests');
+  if (error) return null;
+  return Array.isArray(data) ? data : [];
+}
+
+export async function cancelJoinRequest(groupId) {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const { error } = await supabase.rpc('cancel_join_request', { p_group: groupId });
+  return error ? { ok: false, error: cleanErr(error, 'Could not cancel') } : { ok: true };
+}
+
+export async function rejectJoinRequest(memberId) {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const { data, error } = await supabase.rpc('reject_join_request', { p_member_id: memberId });
+  if (!error && data?.ok) return { ok: true };
+  if (rpcMissing(error)) {
+    const r = await supabase.from('group_members').update({ status: 'removed' }).eq('id', memberId);
+    return r.error ? { ok: false, error: r.error.message } : { ok: true };
+  }
+  return { ok: false, error: data?.error || cleanErr(error, 'Could not decline') };
+}
+
+export async function deleteMyAccount() {
+  if (!supabase) return { ok: false, error: 'No backend configured.' };
+  const { error } = await supabase.rpc('delete_my_account');
+  return error ? { ok: false, error: cleanErr(error, 'Could not delete account') } : { ok: true };
+}
+
+/* Legacy join (projects without migration 0006). Accepts either a
+ * member-specific invite code (claims that member row) or the group-wide
+ * join code, with a direct member-invite-code claim as a last resort. */
 export async function joinGroupByCode(code) {
   if (!supabase) return { ok: false, error: 'No backend configured.' };
   const p_code = (code || '').trim().toUpperCase();
@@ -358,20 +448,7 @@ async function claimMemberInvite(code) {
   }
 }
 
-/* ---------- request to join / approve request ---------- */
-export async function requestToJoinGroup(code, note = '') {
-  if (!supabase) return { ok: false, error: 'No backend configured.' };
-  const p_code = (code || '').trim().toUpperCase();
-
-  try {
-    const { data, error } = await supabase.rpc('request_to_join', { p_code, p_note: note });
-    if (!error && data) return data;
-  } catch {}
-
-  // Fallback: join directly via join_by_code
-  return joinGroupByCode(p_code);
-}
-
+/* ---------- approve a pending join request ---------- */
 export async function approveJoinRequest(memberId) {
   if (!supabase) return { ok: false, error: 'No backend configured.' };
   try {
@@ -391,7 +468,7 @@ export async function approveJoinRequest(memberId) {
 // only rows the user can see reach them. Returns an unsubscribe function.
 const RT_TABLES = [
   'groups', 'group_members', 'cycles', 'contributions', 'loans', 'loan_votes',
-  'loan_repayments', 'meetings', 'motions', 'motion_votes', 'ledger', 'notifications', 'payments',
+  'loan_repayments', 'meetings', 'motions', 'motion_votes', 'ledger', 'notifications', 'payments', 'projects',
 ];
 export function subscribeGroup(groupId, onChange) {
   if (!supabase || !groupId) return () => {};
@@ -412,6 +489,7 @@ export function groupPatchToRow(patch) {
   const map = {
     name: 'name', type: 'type', contributionAmount: 'contribution_amount', frequency: 'frequency',
     currency: 'currency', loanInterest: 'loan_interest', activeCycleId: 'active_cycle_id',
+    requireApproval: 'require_approval',
   };
   const row = {};
   for (const k of Object.keys(patch)) if (map[k]) row[map[k]] = patch[k];

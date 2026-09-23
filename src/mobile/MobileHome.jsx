@@ -231,6 +231,19 @@ export default function MobileHome({ store, open }) {
         )}
       </div>
 
+      {/* people who used the invite link and are waiting to be let in */}
+      {store.canManageMembers() && store.pendingRequests().length > 0 && (
+        <button className="cha-card cha-attn" style={{ width: '100%', textAlign: 'left', cursor: 'pointer' }} onClick={() => open('members')}>
+          <SecHead title="Join requests" />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+            <span className="cha-muted cha-small">
+              {store.pendingRequests().length} {store.pendingRequests().length === 1 ? 'person wants' : 'people want'} to join — approve or decline
+            </span>
+            <ArrowRight size={16} />
+          </div>
+        </button>
+      )}
+
       {/* payments to confirm */}
       {canMoney && pendingPays.length > 0 && (
         <button className="cha-card cha-attn" style={{ width: '100%', textAlign: 'left', cursor: 'pointer' }} onClick={() => open('collections')}>

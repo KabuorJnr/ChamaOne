@@ -336,31 +336,35 @@ function GroupSwitcher({ store, close, open, ui }) {
 function JoinBox({ store, close, open, ui }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const requests = store.myJoinRequests();
   const join = async () => {
     if (!code.trim()) return ui.toast('Enter an invite code or paste a link');
     setBusy(true);
     const r = await store.joinGroup(code.trim());
     setBusy(false);
     if (!r.ok) return ui.toast(r.error || 'Could not join');
-    close(); open && open('home'); ui.toast(`Joined ${r.name}`);
-  };
-
-  const request = async () => {
-    if (!code.trim()) return ui.toast('Enter an invite code or paste a link');
-    setBusy(true);
-    const r = await store.requestToJoin(code.trim());
-    setBusy(false);
-    if (!r.ok) return ui.toast(r.error || 'Could not send request');
-    close();
-    if (r.status === 'already_member') {
-      open && open('home'); ui.toast(`You are already in ${r.name}!`);
-    } else {
-      ui.toast(`Join request submitted to ${r.name || 'the Chama'}!`);
-    }
+    setCode('');
+    if (r.status === 'pending') return ui.toast(`Request sent to ${r.name}. An officer must approve you first.`);
+    close(); open && open('home');
+    ui.toast(r.status === 'already_member' ? `You're already in ${r.name}` : `Joined ${r.name}`);
   };
 
   return (
     <div style={{ marginTop: 14 }}>
+      {requests.length > 0 && (
+        <div className="cha-card" style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: 12, marginBottom: 10 }}>
+          <b style={{ fontSize: 13, color: '#92400e' }}>Waiting for approval</b>
+          {requests.map((r) => (
+            <div key={r.groupId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: 13 }}>
+              <span>{r.name}</span>
+              <button className="cha-btn cha-btn-ghost cha-btn-sm" disabled={busy}
+                onClick={async () => { setBusy(true); await store.cancelJoinRequest(r.groupId); setBusy(false); ui.toast('Request cancelled'); }}>
+                Cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <p className="cha-muted cha-small">Have an invite link or code? Join a Chama:</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <input
@@ -370,14 +374,9 @@ function JoinBox({ store, close, open, ui }) {
           placeholder="Paste invite link or enter code"
           style={{ fontSize: 14 }}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <button className="cha-btn" onClick={join} disabled={busy} style={{ background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff' }}>
-            {busy ? '…' : 'Join group'}
-          </button>
-          <button className="cha-btn cha-btn-ghost" onClick={request} disabled={busy}>
-            Request to join
-          </button>
-        </div>
+        <button className="cha-btn" onClick={join} disabled={busy} style={{ background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff' }}>
+          {busy ? '…' : 'Join Chama'}
+        </button>
       </div>
     </div>
   );

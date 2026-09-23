@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   BarChart3, BookOpen, Settings, FilePlus2, Download, Printer, ChevronRight,
   Wallet, TrendingUp, RefreshCw, Trash2, ArrowDownLeft, ArrowUpRight, Lock, Bell, BellOff, Coins, ArrowLeftRight,
-  KeyRound, LogOut, RotateCcw, Target,
+  KeyRound, LogOut, RotateCcw, Target, UserX,
 } from 'lucide-react';
 import { fmtKES, BarChart, SecHead, useUI, downloadText } from './kit';
 import { fmtDate } from '../../store/chama';
@@ -48,6 +48,22 @@ export function MoreScreen({ store, open, user, onLogout }) {
           <div className="cha-lt"><b>Sign out</b></div>
           <ChevronRight className="cha-chev" size={18} />
         </button>
+        {isSupabaseConfigured && (
+          <button className="cha-li" onClick={() => confirm(
+            'Delete your account?',
+            'This permanently deletes your login and personal details. Chamas you created pass to the next officer (or are deleted if you are the only member). Your name stays on past entries in each group’s ledger so their books still balance. This cannot be undone.',
+            async () => {
+              const res = await store.deleteAccount();
+              if (!res.ok) return toast(res.error || 'Could not delete your account');
+              toast('Your account has been deleted');
+              onLogout && onLogout();
+            },
+          )}>
+            <span className="cha-lic" style={{ background: 'var(--bad-100)', color: 'var(--bad)' }}><UserX /></span>
+            <div className="cha-lt"><b>Delete account</b><span>Permanently remove your account & data</span></div>
+            <ChevronRight className="cha-chev" size={18} />
+          </button>
+        )}
       </div>
 
       <SecHead title="Money & Activities" />
