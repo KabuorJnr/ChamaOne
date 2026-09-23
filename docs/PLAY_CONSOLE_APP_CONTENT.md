@@ -24,10 +24,9 @@ answer below matches what the app actually does, which is what Google checks.
    to run twice. Without it, projects only save on the phone that created them,
    join approval isn't enforced by the server, and **Delete account** shows an
    error. It also fixes a live security hole (see the commit message).
-2. **Replace the contact email.** `public/privacy.html` and
-   `public/delete-account.html` use `privacy@chamaone.app`. If you don't
-   receive mail at that address, change both files to an inbox you check.
-   Google rejects policies whose contact doesn't work.
+2. **Contact email** — `public/privacy.html` and `public/delete-account.html`
+   list `rooneyodhiambo2004@gmail.com`. Use the same address as the
+   **developer contact email** on the store listing.
 3. **Deploy the website** (push to the branch Vercel builds) so these open in a
    browser:
    - `https://chama-one-ten.vercel.app/privacy`

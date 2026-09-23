@@ -101,9 +101,8 @@ Set the **Privacy policy URL** to:
 https://chama-one-ten.vercel.app/privacy
 ```
 
-(That page ships with the app — `public/privacy.html`. Update the contact email
-in it to a real inbox you check, and replace the `privacy@chamaone.app`
-placeholder if you don’t own that address.)
+(That page ships with the app — `public/privacy.html`. Its contact email is
+`rooneyodhiambo2004@gmail.com`; account deletion is explained at `/delete-account`.)
 
 ## 7. Data safety form
 
